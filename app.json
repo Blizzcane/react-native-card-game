@@ -20,7 +20,22 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "manifest": {
+        "background_color": "#ffffff",
+        "theme_color": "#000000",
+        "display": "standalone",
+        "start_url": "/",
+        "short_name": "Rum",
+        "description": "A fun multiplayer card game.",
+        "icons": [
+          {
+            "src": "./assets/images/icon.png",
+            "sizes": "512x512",
+            "type": "image/png"
+          }
+        ]
+      }
     },
     "plugins": [
       "expo-router",

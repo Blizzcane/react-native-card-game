@@ -9,7 +9,11 @@
   "min_players": "At least 2 players are required to start.",
   "game_reset": "The game has been reset.",
   "round": "Round",
+  "dealer": "Dealer",
+  "current_turn": "Current Turn",
   "discard_pile": "Discard Pile",
+  "next_turn": "Next Turn",
   "next_round": "Next Round",
-  "exit_game": "Exit Game"
+  "exit_game": "Exit Game",
+  "score": "Score"
 }
