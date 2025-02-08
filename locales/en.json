@@ -1,0 +1,15 @@
+{
+  "welcome": "Welcome to the Card Game",
+  "go_to_lobby": "Go to Lobby",
+  "multiplayer_lobby": "Multiplayer Lobby",
+  "join_game": "Join Game",
+  "start_game": "Start Game",
+  "player": "Player {{number}}",
+  "max_players": "Maximum 4 players allowed!",
+  "min_players": "At least 2 players are required to start.",
+  "game_reset": "The game has been reset.",
+  "round": "Round",
+  "discard_pile": "Discard Pile",
+  "next_round": "Next Round",
+  "exit_game": "Exit Game"
+}
