@@ -21,27 +21,27 @@ type DraggableCardProps = {
 export default function DraggableCard({ card, index, onMove }: DraggableCardProps) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
+  const cardWidth = 60; // Approximate card width + spacing
 
   // Animated styles
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
-    zIndex: translateY.value !== 0 ? 1 : 0, // Bring dragged card to front
+    zIndex: translateY.value !== 0 ? 1 : 0, // Bring dragged card to front when moving
   }));
 
   // Gesture setup
   const panGesture = Gesture.Pan()
-    .onBegin(() => {
-      startX.value = translateX.value;
-      startY.value = translateY.value;
-    })
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
     })
     .onEnd(() => {
-      runOnJS(onMove)(index, Math.round(translateX.value / 60)); // Move card logic
+      const toIndex = index + Math.round(translateX.value / cardWidth);
+
+      if (toIndex !== index) {
+        runOnJS(onMove)(index, toIndex);
+      }
+
       translateX.value = withSpring(0);
       translateY.value = withSpring(0);
     });
