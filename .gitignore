@@ -36,3 +36,7 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+node_modules/
+web-build/
+.expo/
+firebaseConfig.js
