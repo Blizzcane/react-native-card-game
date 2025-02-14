@@ -6,13 +6,14 @@ import {
   FlatList, 
   Image, 
   TouchableOpacity, 
+  Alert, 
   StyleSheet 
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
-import avatars from "@/utils/avatarLoader"; // Avatar list
+import avatars from "@/utils/avatarLoader";
 import { db } from "@/firebaseConfig";
-import { collection, addDoc, doc, updateDoc, onSnapshot, getDoc } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, onSnapshot, getDoc, deleteDoc } from "firebase/firestore";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 
@@ -41,29 +42,29 @@ export default function LobbyScreen() {
   }, [fontsLoaded]);
 
   if (!fontsLoaded) {
-    return null; // Prevent rendering until font loads
+    return null;
   }
 
-  // 🔹 Generate Unique Player ID
+  // ✅ Generate Unique Player ID
   useEffect(() => {
     if (!playerId) {
       setPlayerId(`${playerName}_${Math.random().toString(36).substr(2, 5)}`);
     }
   }, [playerName]);
 
-  // 🔹 Fetch available game rooms
+  // ✅ Fetch available game rooms
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "games"), (snapshot) => {
       const activeGames = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(game => game.status === "waiting"); // Show only waiting rooms
+        .filter(game => game.status === "waiting");
       setAvailableRooms(activeGames);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // 🔹 Host a new game
+  // ✅ Host a new game
   const hostGame = async () => {
     if (!playerName) return alert("Enter a name first!");
 
@@ -79,7 +80,7 @@ export default function LobbyScreen() {
     joinGame(newGameRef.id);
   };
 
-  // 🔹 Join an existing game (Ensuring unique players)
+  // ✅ Join an existing game
   const joinGame = async (id) => {
     if (!playerName) return alert("Enter a name first!");
 
@@ -93,10 +94,9 @@ export default function LobbyScreen() {
 
     setGameId(id);
     const gameData = gameSnap.data();
-
     let newPlayer = { id: playerId, name: playerName, avatar: selectedAvatar };
 
-    // ✅ Prevent duplicate players by checking IDs
+    // ✅ Prevent duplicate players
     if (!gameData.players.find(p => p.id === newPlayer.id)) {
       const updatedPlayers = [...gameData.players, newPlayer];
       await updateDoc(gameRef, { players: updatedPlayers });
@@ -106,23 +106,65 @@ export default function LobbyScreen() {
     setHostId(gameData.hostId);
   };
 
-  // 🔹 Listen for real-time updates (player list, game start)
+  // ✅ Listen for real-time updates (player list, game start, host leaving)
   useEffect(() => {
     if (!gameId) return;
-    const unsubscribe = onSnapshot(doc(db, "games", gameId), (snapshot) => {
+    const unsubscribe = onSnapshot(doc(db, "games", gameId), async (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setPlayers(data.players || []);
 
-        // ✅ Redirect all players to game screen when host starts the game
+        // ✅ Redirect players if host leaves (Closes the game)
+        if (!data.players.find(p => p.id === data.hostId)) {
+          await deleteDoc(doc(db, "games", gameId)); // Delete game from Firebase
+          alert(t("game_closed"));
+          router.replace("/"); // ✅ Kick everyone to the main menu
+        }
+
+        // ✅ Redirect to game screen when host starts
         if (data.status === "started") {
-          router.push(`/game?roomId=${gameId}`);
+          router.push(`/game?roomId=${gameId}&playerId=${playerId}`);
         }
       }
     });
 
     return () => unsubscribe();
   }, [gameId]);
+
+  // ✅ Leave Game (Handles host leaving)
+  const leaveGame = async () => {
+    Alert.alert(
+      t("leave_game"),
+      t("confirm_leave"),
+      [
+        { text: t("cancel"), style: "cancel" },
+        {
+          text: t("leave"),
+          style: "destructive",
+          onPress: async () => {
+            if (!gameId) return;
+            const gameRef = doc(db, "games", gameId);
+            const gameSnap = await getDoc(gameRef);
+
+            if (!gameSnap.exists()) return;
+
+            const updatedPlayers = gameSnap.data().players.filter(p => p.id !== playerId);
+            await updateDoc(gameRef, { players: updatedPlayers });
+
+            // ✅ If the host leaves, delete the game and kick everyone out
+            if (playerId === hostId) {
+              await deleteDoc(gameRef);
+              alert(t("game_closed"));
+              router.replace("/");
+              return;
+            }
+
+            router.replace("/");
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -153,6 +195,11 @@ export default function LobbyScreen() {
           ) : (
             <Text>{isHost ? t("waiting_for_players") : t("waiting_for_host")}</Text>
           )}
+
+          {/* ✅ Leave Game Button */}
+          <TouchableOpacity style={styles.leaveButton} onPress={leaveGame}>
+            <Text style={styles.buttonText}>{t("leave_game")}</Text>
+          </TouchableOpacity>
         </>
       ) : (
         <>
@@ -184,13 +231,6 @@ export default function LobbyScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
-  subHeader: { fontSize: 16, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 10 },
-  button: { backgroundColor: "#000", padding: 10, marginVertical: 10, borderRadius: 5 },
+  leaveButton: { backgroundColor: "red", padding: 10, marginVertical: 10, borderRadius: 5 },
   buttonText: { color: "#fff", fontFamily: "PressStart2P" },
-  roomItem: { padding: 10, backgroundColor: "#ddd", borderRadius: 5, marginTop: 5 },
-  roomText: { fontSize: 16 },
-  noRooms: { fontSize: 16, color: "gray", marginTop: 10 },
-  playerRow: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
-  playerAvatar: { width: 30, height: 30, marginRight: 10 },
-  playerText: { fontSize: 18, fontFamily: "PressStart2P" },
 });
