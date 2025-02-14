@@ -1,16 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { SafeAreaView, View, Text, FlatList, StyleSheet } from "react-native";
+import { SafeAreaView, View, Text, FlatList, StyleSheet, Image } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "@react-navigation/native";
-import { useFonts } from "expo-font"; // ✅ Import font loader
-import * as SplashScreen from "expo-splash-screen"; // ✅ Prevent flickering
+import { useFonts } from "expo-font";
+import * as SplashScreen from "expo-splash-screen";
 import { db } from "@/firebaseConfig";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
-import CustomButton from "@/components/CustomButton";
-import DraggableCard from "@/components/DraggableCard";
+import { doc, onSnapshot } from "firebase/firestore";
+import avatars from "@/utils/avatarLoader"; // ✅ Import avatar loader
 
-// Prevent splash screen from hiding before font loads
+// Prevent flickering while loading fonts
 SplashScreen.preventAutoHideAsync();
 
 export default function GameScreen() {
@@ -39,15 +38,16 @@ export default function GameScreen() {
     return null;
   }
 
-  // 🔹 Fetch game state
+  // 🔹 Fetch game state (players, status)
   useEffect(() => {
     if (!roomId) return;
     const gameRef = doc(db, "games", roomId);
 
     const unsubscribe = onSnapshot(gameRef, (snapshot) => {
       if (snapshot.exists()) {
-        setPlayers(snapshot.data().players);
-        setGameStatus(snapshot.data().status);
+        const data = snapshot.data();
+        setPlayers(data.players || []);
+        setGameStatus(data.status);
       } else {
         alert("Game session not found!");
         router.push("/lobby");
@@ -57,27 +57,30 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId]);
 
-  // 🔹 Show "Waiting for Host" if game hasn’t started yet
+  // 🔹 If the game hasn’t started, show "Waiting for Host"
   if (gameStatus !== "started") {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.header, { color: colors.text }]}>
-          {t("waiting_for_host")}
-        </Text>
+        <Text style={[styles.header, { color: colors.text }]}>{t("waiting_for_host")}</Text>
       </SafeAreaView>
     );
   }
 
-  // 🔹 Game UI when game starts
+  // 🔹 Game UI when the game starts
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.innerContainer}>
         <Text style={[styles.header, { color: colors.text }]}>{t("game_started")}</Text>
+        
+        {/* ✅ Display Players with Avatars */}
         <FlatList
           data={players}
           keyExtractor={(item, index) => index.toString()}
           renderItem={({ item }) => (
-            <Text style={[styles.player, { color: colors.text }]}>{item}</Text>
+            <View style={styles.playerRow}>
+              <Image source={avatars[item.avatar]} style={styles.playerAvatar} />
+              <Text style={[styles.playerText, { color: colors.text }]}>{item.name}</Text>
+            </View>
           )}
         />
       </View>
@@ -85,20 +88,31 @@ export default function GameScreen() {
   );
 }
 
-// ✅ Apply font globally to all text
+// ✅ Apply font & styles to all text
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center" },
   innerContainer: { width: "100%", padding: 20, alignItems: "center" },
   header: {
     fontSize: 20,
-    fontFamily: "PressStart2P", // ✅ Apply font here
+    fontFamily: "PressStart2P", // ✅ Font applied
     textAlign: "center",
     marginBottom: 10,
   },
-  player: {
+  playerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 10,
+  },
+  playerAvatar: {
+    width: 40,
+    height: 40,
+    marginRight: 10,
+    borderRadius: 20,
+  },
+  playerText: {
     fontSize: 16,
-    fontFamily: "PressStart2P", // ✅ Apply font here
+    fontFamily: "PressStart2P", // ✅ Font applied
     textAlign: "center",
-    marginBottom: 5,
   },
 });
+

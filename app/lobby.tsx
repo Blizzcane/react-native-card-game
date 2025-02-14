@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from "react-native";
-import { useRouter } from "expo-router";
+import { 
+  SafeAreaView, 
+  View, 
+  Text, 
+  FlatList, 
+  Image, 
+  TouchableOpacity, 
+  StyleSheet 
+} from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { db } from "@/firebaseConfig"; 
+import avatars from "@/utils/avatarLoader"; // Avatar list
+import { db } from "@/firebaseConfig";
 import { collection, addDoc, doc, updateDoc, onSnapshot, getDoc } from "firebase/firestore";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
@@ -12,13 +21,15 @@ SplashScreen.preventAutoHideAsync();
 export default function LobbyScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { playerName, selectedAvatar } = useLocalSearchParams();
   const [gameId, setGameId] = useState("");
   const [players, setPlayers] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [isHost, setIsHost] = useState(false);
-  const [gameStatus, setGameStatus] = useState("waiting");
+  const [hostId, setHostId] = useState("");
+  const [playerId, setPlayerId] = useState("");
 
-  // 🔹 Load the font
+  // ✅ Load Font
   const [fontsLoaded] = useFonts({
     "PressStart2P": require("../assets/fonts/PressStart2P-Regular.ttf"),
   });
@@ -30,33 +41,48 @@ export default function LobbyScreen() {
   }, [fontsLoaded]);
 
   if (!fontsLoaded) {
-    return null; // Ensure nothing renders before fonts load
+    return null; // Prevent rendering until font loads
   }
+
+  // 🔹 Generate Unique Player ID
+  useEffect(() => {
+    if (!playerId) {
+      setPlayerId(`${playerName}_${Math.random().toString(36).substr(2, 5)}`);
+    }
+  }, [playerName]);
 
   // 🔹 Fetch available game rooms
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "games"), (snapshot) => {
       const activeGames = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(game => game.status === "waiting"); 
+        .filter(game => game.status === "waiting"); // Show only waiting rooms
       setAvailableRooms(activeGames);
     });
+
     return () => unsubscribe();
   }, []);
 
   // 🔹 Host a new game
   const hostGame = async () => {
-    const gameRef = await addDoc(collection(db, "games"), {
-      players: [],
+    if (!playerName) return alert("Enter a name first!");
+
+    const newGameRef = await addDoc(collection(db, "games"), {
+      players: [{ id: playerId, name: playerName, avatar: selectedAvatar }],
       status: "waiting",
+      hostId: playerId,
     });
-    setGameId(gameRef.id);
+
+    setGameId(newGameRef.id);
+    setHostId(playerId);
     setIsHost(true);
-    joinGame(gameRef.id);
+    joinGame(newGameRef.id);
   };
 
-  // 🔹 Join an existing game
+  // 🔹 Join an existing game (Ensuring unique players)
   const joinGame = async (id) => {
+    if (!playerName) return alert("Enter a name first!");
+
     const gameRef = doc(db, "games", id);
     const gameSnap = await getDoc(gameRef);
 
@@ -68,59 +94,64 @@ export default function LobbyScreen() {
     setGameId(id);
     const gameData = gameSnap.data();
 
-    if (!gameData.players.includes(`Player_${Math.random().toString(36).substr(2, 5)}`)) {
-      await updateDoc(gameRef, {
-        players: [...gameData.players, `Player_${Math.random().toString(36).substr(2, 5)}`],
-      });
+    let newPlayer = { id: playerId, name: playerName, avatar: selectedAvatar };
+
+    // ✅ Prevent duplicate players by checking IDs
+    if (!gameData.players.find(p => p.id === newPlayer.id)) {
+      const updatedPlayers = [...gameData.players, newPlayer];
+      await updateDoc(gameRef, { players: updatedPlayers });
+      setPlayers(updatedPlayers);
     }
+
+    setHostId(gameData.hostId);
   };
 
-  // 🔹 Start the game (Host only)
-  const startGame = async () => {
-    if (isHost && players.length >= 2) {
-      await updateDoc(doc(db, "games", gameId), { status: "started" });
-    } else {
-      alert("Only the host can start the game, and you need at least 2 players.");
-    }
-  };
-
-  // 🔹 Listen for game status updates
+  // 🔹 Listen for real-time updates (player list, game start)
   useEffect(() => {
     if (!gameId) return;
     const unsubscribe = onSnapshot(doc(db, "games", gameId), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setPlayers(data.players || []);
-        setGameStatus(data.status);
 
+        // ✅ Redirect all players to game screen when host starts the game
         if (data.status === "started") {
           router.push(`/game?roomId=${gameId}`);
         }
       }
     });
+
     return () => unsubscribe();
   }, [gameId]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.header}>{t("multiplayer_lobby")}</Text>
 
       {gameId ? (
         <>
-          <Text style={styles.subHeader}>{t("game_id")}: {gameId}</Text>
+          <Text>{t("game_id")}: {gameId}</Text>
+          <Text>{t("host")}: {hostId}</Text>
+
+          {/* ✅ Show Player List with Avatars */}
           <FlatList
             data={players}
-            keyExtractor={(item, index) => index.toString()}
-            renderItem={({ item }) => <Text style={styles.player}>{item}</Text>}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.playerRow}>
+                <Image source={avatars[item.avatar]} style={styles.playerAvatar} />
+                <Text style={styles.playerText}>{item.name} {item.id === hostId ? "(Host)" : ""}</Text>
+              </View>
+            )}
           />
+
+          {/* ✅ Host Can Start Game */}
           {isHost && players.length >= 2 ? (
-            <TouchableOpacity style={styles.button} onPress={startGame}>
+            <TouchableOpacity style={styles.button} onPress={() => updateDoc(doc(db, "games", gameId), { status: "started" })}>
               <Text style={styles.buttonText}>{t("start_game")}</Text>
             </TouchableOpacity>
           ) : (
-            <Text style={styles.waitingText}>
-              {isHost ? t("waiting_for_players") : t("waiting_for_host")}
-            </Text>
+            <Text>{isHost ? t("waiting_for_players") : t("waiting_for_host")}</Text>
           )}
         </>
       ) : (
@@ -128,6 +159,7 @@ export default function LobbyScreen() {
           <TouchableOpacity style={styles.button} onPress={hostGame}>
             <Text style={styles.buttonText}>{t("host_game")}</Text>
           </TouchableOpacity>
+
           <Text style={styles.subHeader}>{t("available_games")}</Text>
           {availableRooms.length > 0 ? (
             <FlatList
@@ -144,69 +176,21 @@ export default function LobbyScreen() {
           )}
         </>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
+// ✅ Styles
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  header: { 
-    fontSize: 20, 
-    fontFamily: "PressStart2P", 
-    textAlign: "center", 
-    marginBottom: 20, 
-    color: "#FFF" 
-  },
-  subHeader: { 
-    fontSize: 14, 
-    fontFamily: "PressStart2P", 
-    marginBottom: 10, 
-    color: "#FFF",
-    textAlign: "center"
-  },
-  waitingText: {
-    fontSize: 12,
-    fontFamily: "PressStart2P",
-    color: "#FFD700",
-    textAlign: "center",
-    marginTop: 10,
-  },
-  noRooms: { 
-    fontSize: 12, 
-    fontFamily: "PressStart2P", 
-    color: "#AAA", 
-    marginTop: 10, 
-    textAlign: "center"
-  },
-  roomItem: { 
-    padding: 10, 
-    backgroundColor: "#000", 
-    borderRadius: 5, 
-    marginTop: 5,
-  },
-  roomText: { 
-    fontSize: 12, 
-    fontFamily: "PressStart2P", 
-    color: "#FFD700", 
-    textAlign: "center"
-  },
-  player: { 
-    fontSize: 14, 
-    fontFamily: "PressStart2P", 
-    color: "#FFF", 
-    marginVertical: 5 
-  },
-  button: {
-    backgroundColor: "#000",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-    marginVertical: 5,
-  },
-  buttonText: {
-    fontSize: 14,
-    fontFamily: "PressStart2P",
-    color: "#FFF",
-    textAlign: "center",
-  },
+  header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
+  subHeader: { fontSize: 16, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 10 },
+  button: { backgroundColor: "#000", padding: 10, marginVertical: 10, borderRadius: 5 },
+  buttonText: { color: "#fff", fontFamily: "PressStart2P" },
+  roomItem: { padding: 10, backgroundColor: "#ddd", borderRadius: 5, marginTop: 5 },
+  roomText: { fontSize: 16 },
+  noRooms: { fontSize: 16, color: "gray", marginTop: 10 },
+  playerRow: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
+  playerAvatar: { width: 30, height: 30, marginRight: 10 },
+  playerText: { fontSize: 18, fontFamily: "PressStart2P" },
 });
