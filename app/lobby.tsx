@@ -31,7 +31,6 @@ export default function LobbyScreen() {
   const [playerId, setPlayerId] = useState("");
 
   // ✅ Load Font
-  // testing remote branch
   const [fontsLoaded] = useFonts({
     "PressStart2P": require("../assets/fonts/PressStart2P-Regular.ttf"),
   });
@@ -81,7 +80,7 @@ export default function LobbyScreen() {
     joinGame(newGameRef.id);
   };
 
-  // ✅ Join an existing game
+  // ✅ Join an existing game (limit to 4 players max)
   const joinGame = async (id) => {
     if (!playerName) return alert("Enter a name first!");
 
@@ -93,8 +92,15 @@ export default function LobbyScreen() {
       return;
     }
 
-    setGameId(id);
     const gameData = gameSnap.data();
+
+    // Limit: only allow joining if there are less than 4 players.
+    if (gameData.players && gameData.players.length >= 4) {
+      alert("Game is full (maximum 4 players allowed).");
+      return;
+    }
+
+    setGameId(id);
     let newPlayer = { id: playerId, name: playerName, avatar: selectedAvatar };
 
     // ✅ Prevent duplicate players
@@ -188,7 +194,7 @@ export default function LobbyScreen() {
             )}
           />
 
-          {/* ✅ Host Can Start Game */}
+          {/* ✅ Host Can Start Game if there are at most 4 players */}
           {isHost && players.length >= 2 ? (
             <TouchableOpacity style={styles.button} onPress={() => updateDoc(doc(db, "games", gameId), { status: "started" })}>
               <Text style={styles.buttonText}>{t("start_game")}</Text>
@@ -228,16 +234,9 @@ export default function LobbyScreen() {
   );
 }
 
-// ✅ Styles
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
   leaveButton: { backgroundColor: "red", padding: 10, marginVertical: 10, borderRadius: 5 },
   buttonText: { color: "#fff", fontFamily: "PressStart2P" },
-  // playerAvatar: {
-  //   width: 50,  
-  //   height: 50, 
-  //   borderRadius: 0, 
-  //   resizeMode: "contain",  
-  // },  
 });
