@@ -245,87 +245,114 @@ export default function GameScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    alignItems: "center", 
-    justifyContent: "center", 
-    padding: 20 
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20
   },
   startRoundButton: {
-    backgroundColor: "#000",
     padding: 10,
     marginBottom: 10,
-    borderRadius: 5,
+    borderRadius: 3,
+    backgroundColor: "#c3c3c3",
+    marginVertical: 10,
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
   },
-  startRoundText: { 
-    color: "#fff", 
-    fontFamily: "PressStart2P", 
-    fontSize: 14 
+  startRoundText: {
+    color: "#fff",
+    fontFamily: "PressStart2P",
+    fontSize: 14
   },
-  header: { 
-    fontSize: 20, 
-    fontFamily: "PressStart2P", 
-    textAlign: "center", 
-    marginBottom: 20 
+  header: {
+    fontSize: 20,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    marginBottom: 20
   },
-  subHeader: { 
-    fontSize: 16, 
-    fontFamily: "PressStart2P", 
-    textAlign: "center", 
-    marginVertical: 10 
+  subHeader: {
+    fontSize: 16,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    marginVertical: 10
   },
-  avatarRow: { 
+  avatarRow: {
     flexDirection: "row", 
-    justifyContent: "space-evenly", 
+    justifyContent: "center",
     width: "100%", 
-    marginBottom: 20 
+    marginBottom: 20
   },
-  avatarContainer: { 
-    alignItems: "center", 
-    width: 100, 
-    padding: 5 
+  avatarContainer: {
+    alignItems: "center",
+    width: 100,
+    padding: 5,
+    backgroundColor: "#c3c3c3", 
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
   },
   currentTurnHighlight: {
-    borderWidth: 2,
-    borderColor: "yellow",
-    borderRadius: 5,
+     
   },
-  avatarImage: { 
-    width: 80, 
-    height: 80 
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderWidth: 4,
+    borderTopColor: "#404040",
+    borderLeftColor: "#404040",
+    borderBottomColor: "#fff",
+    borderRightColor: "#fff",
   },
-  avatarName: { 
-    fontFamily: "PressStart2P", 
-    fontSize: 10, 
-    marginTop: 5, 
-    color: "#000" 
+  avatarName: {
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+    marginTop: 5,
+    color: "#000"
   },
   currentTurnAvatarName: {
     color: "yellow",
   },
-  deckDiscardContainer: { 
-    flexDirection: "row", 
-    justifyContent: "space-evenly", 
-    width: "100%", 
-    marginVertical: 20 
+  deckDiscardContainer: {
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+    width: "100%",
+    marginVertical: 20
   },
-  deckCard: { 
-    width: 100, 
-    height: 140, 
-    backgroundColor: "#444", 
-    borderRadius: 5, 
-    alignItems: "center", 
-    justifyContent: "center", 
-    padding: 5 
+  deckCard: {
+    width: 100,
+    height: 140,
+    backgroundColor: "#444",
+    borderRadius: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 5
   },
-  handContainer: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    paddingHorizontal: 20 
+  handContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    paddingHorizontal: 20,
+    backgroundColor: "#c3c3c3",
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+    padding: 10,
+    marginVertical: 10,
+    borderRadius: 3,
+    height: "25%",
+    width: "100%",
   },
   card: {
-    width: 70,
-    height: 100,
+    height: "100%",
+    aspectRatio: 0.7,
     backgroundColor: "#fff",
     borderColor: "#000",
     borderWidth: 1,
@@ -335,10 +362,10 @@ const styles = StyleSheet.create({
     padding: 5,
     marginHorizontal: 5,
   },
-  cardText: { 
-    fontFamily: "PressStart2P", 
-    fontSize: 12, 
-    textAlign: "center", 
-    color: "#000" 
+  cardText: {
+    fontFamily: "PressStart2P",
+    fontSize: 12,
+    textAlign: "center",
+    color: "#000"
   },
 });
