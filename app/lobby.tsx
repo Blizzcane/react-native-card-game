@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { 
-  SafeAreaView, 
-  View, 
-  Text, 
-  FlatList, 
-  Image, 
-  TouchableOpacity, 
-  Alert, 
-  StyleSheet 
+import {
+  SafeAreaView,
+  View,
+  Text,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  Alert,
+  StyleSheet
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -177,12 +177,12 @@ export default function LobbyScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.header}>{t("multiplayer_lobby")}</Text>
-      
+
       {gameId ? (
         <>
           <Text>{t("game_id")}: {gameId}</Text>
           <Text>{t("host")}: {hostId}</Text>
-          
+
           {/* Show Player List with Avatars */}
           <FlatList
             data={players}
@@ -212,19 +212,32 @@ export default function LobbyScreen() {
       ) : (
         <>
           <TouchableOpacity style={styles.button} onPress={hostGame}>
-            <Text style={styles.buttonText}>{t("host_game")}</Text>
+            <Text style={styles.buttonText}>{t("Host Game")}</Text>
           </TouchableOpacity>
-          <Text style={styles.subHeader}>{t("available_games")}</Text>
+          <Text style={styles.subHeader}>{t("Available Games")}</Text>
           {availableRooms.length > 0 ? (
             <FlatList
               data={availableRooms}
               keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.roomItem} onPress={() => joinGame(item.id)}>
-                  <Text style={styles.roomText}>Game {item.id} ({item.players.length} players)</Text>
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                console.log("Item players:", item.players);
+                return (
+                  <TouchableOpacity style={styles.roomItem} onPress={() => joinGame(item.id)}>
+                    <View style={styles.lobbyAvatarGrid}>
+                      {item.players.map((player, index) => (
+                        <Image
+                          key={index}
+                          source={avatars[player.avatar]}
+                          style={styles.lobbyAvatar}
+                        />
+                      ))}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
             />
+
+
           ) : (
             <Text style={styles.noRooms}>{t("no_games_available")}</Text>
           )}
@@ -239,12 +252,45 @@ const styles = StyleSheet.create({
   header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
   playerRow: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
   playerAvatar: { width: 50, height: 50, marginRight: 10 },
-  playerText: { fontFamily: "PressStart2P", fontSize: 12 },
-  button: { backgroundColor: "#000", padding: 10, marginVertical: 10, borderRadius: 5 },
-  buttonText: { color: "#fff", fontFamily: "PressStart2P" },
+  lobbyAvatarGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginVertical: 5, },
+  lobbyAvatar: {
+    width: 100,
+    height: 100,
+    marginRight: 5,
+    marginLeft: 5,
+    borderWidth: 3,
+    borderTopColor: "#404040",   // dark on top
+    borderLeftColor: "#404040",  // dark on left
+    borderBottomColor: "#fff",   // light on bottom
+    borderRightColor: "#fff",    // light on right
+  },
+    playerText: { fontFamily: "PressStart2P", fontSize: 12 },
+  button: {
+    backgroundColor: "#c3c3c3",
+    padding: 10,
+    marginVertical: 10,
+    borderRadius: 3,
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  }, buttonText: { color: "#fff", fontFamily: "PressStart2P" },
   leaveButton: { backgroundColor: "red", padding: 10, marginVertical: 10, borderRadius: 5 },
   subHeader: { fontSize: 16, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 10 },
-  roomItem: { backgroundColor: "#000", padding: 10, borderRadius: 5, marginVertical: 5 },
+  roomItem: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    backgroundColor: "#c3c3c3",
+    padding: 10,
+    borderRadius: 3,
+    marginVertical: 5,
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  },
   roomText: { color: "#fff", fontFamily: "PressStart2P" },
   noRooms: { fontFamily: "PressStart2P", fontSize: 14, color: "#000" },
 });
