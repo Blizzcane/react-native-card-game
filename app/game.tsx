@@ -14,11 +14,26 @@ import * as SplashScreen from "expo-splash-screen";
 import { DraxProvider, DraxList, DraxView } from "react-native-drax";
 import { db } from "@/firebaseConfig";
 import { doc, updateDoc, onSnapshot, arrayUnion } from "firebase/firestore";
+import avatars from "@/utils/avatarLoader";
 
 SplashScreen.preventAutoHideAsync();
 
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+const RANKS = [
+  "A",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "J",
+  "Q",
+  "K",
+];
 
 function generateDeck() {
   const deck = [];
@@ -247,8 +262,12 @@ export default function GameScreen() {
   }, [gameStatus, playersReady, players, isHost, deck]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.header, { color: colors.text }]}>Round {currentRound}</Text>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
+      <Text style={[styles.header, { color: colors.text }]}>
+        Round {currentRound}
+      </Text>
       <View style={styles.avatarRow}>
         {players.map((player) => (
           <View
@@ -258,7 +277,7 @@ export default function GameScreen() {
               player.id === currentTurn && styles.currentTurnHighlight,
             ]}
           >
-            <Image source={{ uri: player.avatar }} style={styles.avatarImage} />
+            <Image source={avatars[player.avatar]} style={styles.avatarImage} />
             <Text style={styles.avatarName}>{player.name}</Text>
           </View>
         ))}
@@ -271,7 +290,8 @@ export default function GameScreen() {
           {discardPile.length > 0 ? (
             <View style={styles.card}>
               <Text style={styles.cardText}>
-                {discardPile[discardPile.length - 1].rank} of {discardPile[discardPile.length - 1].suit}
+                {discardPile[discardPile.length - 1].rank} of{" "}
+                {discardPile[discardPile.length - 1].suit}
               </Text>
             </View>
           ) : (
@@ -289,10 +309,9 @@ export default function GameScreen() {
             const [removed] = newHand.splice(fromIndex, 1);
             newHand.splice(toIndex, 0, removed);
             setPlayerHand(newHand);
-            // Not updating Firebase here so that reordering is purely local.
           }}
           keyExtractor={(item, index) => index.toString()}
-          renderItemContent={({ item, index }) => (
+          renderItemContent={({ item, index, dragState = {} }) => (
             <DraxView
               payload={{ index, item }}
               onDragStart={() => setIsDragging(true)}
@@ -300,13 +319,14 @@ export default function GameScreen() {
             >
               <TouchableOpacity
                 onPress={() => {
-                  // Only trigger discard if not dragging and it's your turn.
-                  if (!isDragging && playerId === currentTurn) {
+                  if (!dragState.isActive && playerId === currentTurn) {
                     discardCard(index);
                   }
                 }}
               >
-                <View style={styles.card}>
+                <View
+                  style={[styles.card, dragState.isActive && styles.dragging]}
+                >
                   <Text style={styles.cardText}>
                     {item.rank} of {item.suit}
                   </Text>
@@ -326,7 +346,10 @@ export default function GameScreen() {
           {playersReady.includes(playerId) ? (
             <Text style={styles.readyText}>Waiting for others...</Text>
           ) : (
-            <TouchableOpacity style={styles.hostButton} onPress={declareReadyForNextRound}>
+            <TouchableOpacity
+              style={styles.hostButton}
+              onPress={declareReadyForNextRound}
+            >
               <Text style={styles.hostButtonText}>Start Next Round</Text>
             </TouchableOpacity>
           )}
@@ -337,16 +360,59 @@ export default function GameScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  header: { fontSize: 20, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
-  subHeader: { fontSize: 16, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 10 },
-  avatarRow: { flexDirection: "row", justifyContent: "space-evenly", width: "100%", marginBottom: 20 },
-  avatarContainer: { alignItems: "center", padding: 5, borderRadius: 5 },
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  header: {
+    fontSize: 20,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  subHeader: {
+    fontSize: 16,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    marginVertical: 10,
+  },
+  avatarRow: {
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+    width: "100%",
+    marginBottom: 20,
+  },
+  avatarContainer: { alignItems: "center", width: 100, padding: 5, borderRadius: 0 },
   currentTurnHighlight: { borderWidth: 2, borderColor: "yellow" },
-  avatarImage: { width: 40, height: 40, borderRadius: 20 },
-  avatarName: { fontFamily: "PressStart2P", fontSize: 8, marginTop: 2, color: "#000" },
-  deckDiscardContainer: { flexDirection: "row", justifyContent: "space-evenly", width: "100%", marginVertical: 20 },
-  deckCard: { width: 100, height: 140, backgroundColor: "#444", borderRadius: 5, alignItems: "center", justifyContent: "center", padding: 5 },
+  avatarImage: { width: 80, height: 80, borderRadius: 0 },
+  avatarName: {
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+    marginTop: 5,
+    color: "#000",
+  },
+  deckDiscardContainer: {
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+    width: "100%",
+    marginVertical: 20,
+  },
+  deckCard: {
+    width: 100,
+    height: 140,
+    backgroundColor: "#444",
+    borderRadius: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 5,
+  },
+  handContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 200,
+  },
   card: {
     width: 70,
     height: 100,
@@ -357,18 +423,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 5,
-    margin: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 2,
+    marginHorizontal: 5,
   },
-  cardText: { fontFamily: "PressStart2P", fontSize: 12, textAlign: "center", color: "#000" },
+  dragging: { opacity: 0.3 },
+  cardText: {
+    fontFamily: "PressStart2P",
+    fontSize: 12,
+    textAlign: "center",
+    color: "#000",
+  },
   actions: { flexDirection: "row", marginVertical: 10 },
-  actionButton: { backgroundColor: "#000", padding: 10, margin: 5, borderRadius: 5 },
+  actionButton: {
+    backgroundColor: "#000",
+    padding: 10,
+    margin: 5,
+    borderRadius: 5,
+  },
   actionText: { color: "#fff", fontFamily: "PressStart2P" },
-  hostButton: { backgroundColor: "#000", padding: 10, marginVertical: 10, borderRadius: 5 },
+  hostButton: {
+    backgroundColor: "#000",
+    padding: 10,
+    marginVertical: 10,
+    borderRadius: 5,
+  },
   hostButtonText: { color: "#fff", fontFamily: "PressStart2P" },
   readyContainer: { marginVertical: 10, alignItems: "center" },
   readyText: { fontFamily: "PressStart2P", fontSize: 12, color: "#000" },
