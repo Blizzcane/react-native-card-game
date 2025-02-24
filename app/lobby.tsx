@@ -234,4 +234,10 @@ const styles = StyleSheet.create({
   header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
   leaveButton: { backgroundColor: "red", padding: 10, marginVertical: 10, borderRadius: 5 },
   buttonText: { color: "#fff", fontFamily: "PressStart2P" },
+  // playerAvatar: {
+  //   width: 50,  
+  //   height: 50, 
+  //   borderRadius: 0, 
+  //   resizeMode: "contain",  
+  // },  
 });

@@ -1,10 +1,11 @@
-import React, { useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
-import { useTranslation } from "react-i18next";
-import { useTheme } from "@react-navigation/native";
-import { useFonts } from "expo-font";
-import * as SplashScreen from "expo-splash-screen";
+import 'react-native-gesture-handler'; // Must be at the very top
+import React, { useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { useTheme } from '@react-navigation/native';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -13,9 +14,8 @@ export default function HomeScreen() {
   const { t } = useTranslation();
   const { colors } = useTheme();
 
-  // ✅ Load the font
   const [fontsLoaded] = useFonts({
-    "PressStart2P": require("../assets/fonts/PressStart2P-Regular.ttf"),
+    PressStart2P: require('../assets/fonts/PressStart2P-Regular.ttf'),
   });
 
   useEffect(() => {
@@ -25,14 +25,12 @@ export default function HomeScreen() {
   }, [fontsLoaded]);
 
   if (!fontsLoaded) {
-    return null; // Prevent UI rendering until font loads
+    return null;
   }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Text style={[styles.header, { color: colors.text }]}>{t("welcome")}</Text>
-
-      {/* 🔹 Redirect players to the setup screen first */}
       <TouchableOpacity style={styles.button} onPress={() => router.push("/PlayerSetup")}>
         <Text style={styles.buttonText}>{t("go_to_lobby")}</Text>
       </TouchableOpacity>
@@ -41,8 +39,28 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { fontSize: 20, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
-  button: { backgroundColor: "#000", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 5, marginVertical: 5 },
-  buttonText: { fontSize: 14, fontFamily: "PressStart2P", color: "#fff", textAlign: "center" },
+  container: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  header: { 
+    fontSize: 20, 
+    fontFamily: 'PressStart2P', 
+    textAlign: 'center', 
+    marginBottom: 20 
+  },
+  button: { 
+    backgroundColor: '#000', 
+    paddingVertical: 10, 
+    paddingHorizontal: 20, 
+    borderRadius: 5, 
+    marginVertical: 5 
+  },
+  buttonText: { 
+    fontSize: 14, 
+    fontFamily: 'PressStart2P', 
+    color: '#fff', 
+    textAlign: 'center' 
+  },
 });
