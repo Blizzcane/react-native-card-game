@@ -7,33 +7,27 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
-import { DraxProvider, DraxList, DraxView } from "react-native-drax";
 import { db } from "@/firebaseConfig";
-import { doc, updateDoc, onSnapshot, arrayUnion } from "firebase/firestore";
+import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import avatars from "@/utils/avatarLoader";
 
 SplashScreen.preventAutoHideAsync();
 
+// Mapping suit names to symbols for display
+const suitSymbols = {
+  hearts: "♥",
+  diamonds: "♦",
+  clubs: "♣",
+  spades: "♠",
+};
+
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-const RANKS = [
-  "A",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "J",
-  "Q",
-  "K",
-];
+const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 
 function generateDeck() {
   const deck = [];
@@ -54,14 +48,6 @@ function shuffleArray(array) {
   return arr;
 }
 
-function getCardValue(card) {
-  if (card.rank === "A") return 11;
-  if (card.rank === "J") return 12;
-  if (card.rank === "Q") return 13;
-  if (card.rank === "K") return 14;
-  return parseInt(card.rank);
-}
-
 export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
@@ -75,9 +61,6 @@ export default function GameScreen() {
   const [players, setPlayers] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
   const [isHost, setIsHost] = useState(false);
-  const [playersReady, setPlayersReady] = useState([]);
-  const [hasDrawn, setHasDrawn] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     if (!roomId) return;
@@ -99,7 +82,6 @@ export default function GameScreen() {
         if (data.currentTurn) {
           setCurrentTurn(data.currentTurn);
         }
-        setPlayersReady(data.playersReady || []);
       } else {
         Alert.alert("Game session not found!");
         router.replace("/lobby");
@@ -108,54 +90,37 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId]);
 
+  // When the turn changes, reset any draw flags (if needed)
   useEffect(() => {
-    if (currentTurn === playerId) {
-      setHasDrawn(false);
-    }
+    // (You can add additional logic here if needed)
   }, [currentTurn, playerId]);
 
+  // Host-only: Start Round button. This shuffles the deck and deals 9 cards to each player.
   const initializeRound = async () => {
     if (!isHost) return;
     if (players.length === 0) {
       Alert.alert("No players available to start the round.");
       return;
     }
-    let newDeck = shuffleArray(generateDeck());
+    const newDeck = shuffleArray(generateDeck());
     const hands = {};
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
-    let initialDiscard = [];
-    if (players.length !== 4) {
-      const firstDiscard = newDeck.shift();
-      if (firstDiscard !== undefined) {
-        initialDiscard.push(firstDiscard);
-      }
-    }
-    const firstTurn = players[0]?.id;
-    if (!firstTurn) {
-      Alert.alert("Error: No valid player to set as first turn.");
-      return;
-    }
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       deck: newDeck,
-      discardPile: initialDiscard,
+      discardPile: [],
       hands: hands,
       currentRound: currentRound + 1,
       status: "started",
-      currentTurn: firstTurn,
-      playersReady: [],
+      currentTurn: players[0]?.id,
     });
   };
 
   const drawFromDeck = async () => {
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
-      return;
-    }
-    if (hasDrawn) {
-      Alert.alert("You have already drawn a card this turn!");
       return;
     }
     if (deck.length === 0) {
@@ -166,7 +131,6 @@ export default function GameScreen() {
     const newDeck = deck.slice(1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
-    setHasDrawn(true);
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       deck: newDeck,
@@ -179,10 +143,6 @@ export default function GameScreen() {
       Alert.alert("Not your turn!");
       return;
     }
-    if (hasDrawn) {
-      Alert.alert("You have already drawn a card this turn!");
-      return;
-    }
     if (discardPile.length === 0) {
       Alert.alert("The discard pile is empty!");
       return;
@@ -191,97 +151,32 @@ export default function GameScreen() {
     const newDiscardPile = discardPile.slice(0, -1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
-    setHasDrawn(true);
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       discardPile: newDiscardPile,
       [`hands.${playerId}`]: newHand,
     });
   };
-
-  const discardCard = async (cardIndex) => {
-    if (playerId !== currentTurn) {
-      Alert.alert("Not your turn!");
-      return;
-    }
-    if (!hasDrawn) {
-      Alert.alert("You must draw a card before discarding!");
-      return;
-    }
-    if (playerHand.length === 0) return;
-    const cardToDiscard = playerHand[cardIndex];
-    if (!cardToDiscard) {
-      Alert.alert("Invalid card selection.");
-      return;
-    }
-    const newHand = [...playerHand];
-    newHand.splice(cardIndex, 1);
-    setPlayerHand(newHand);
-    const newDiscardPile = [...discardPile, cardToDiscard];
-    const currentIndex = players.findIndex((p) => p.id === currentTurn);
-    const nextIndex = (currentIndex + 1) % players.length;
-    const nextTurn = players[nextIndex]?.id;
-    if (!nextTurn) {
-      Alert.alert("Error determining next turn.");
-      return;
-    }
-    const gameRef = doc(db, "games", roomId);
-    await updateDoc(gameRef, {
-      discardPile: newDiscardPile,
-      [`hands.${playerId}`]: newHand,
-      currentTurn: nextTurn,
-    });
-    setHasDrawn(false);
-  };
-
-  const declareRump = async () => {
-    Alert.alert("Rump declared!", "Ending your turn and scoring this round.");
-    const gameRef = doc(db, "games", roomId);
-    await updateDoc(gameRef, {
-      status: "roundEnded",
-      playersReady: [],
-    });
-  };
-
-  const declareReadyForNextRound = async () => {
-    const gameRef = doc(db, "games", roomId);
-    await updateDoc(gameRef, {
-      playersReady: arrayUnion(playerId),
-    });
-  };
-
-  useEffect(() => {
-    if (
-      gameStatus === "roundEnded" &&
-      playersReady.length === players.length &&
-      isHost &&
-      deck.length === 0
-    ) {
-      initializeRound();
-    }
-  }, [gameStatus, playersReady, players, isHost, deck]);
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
-      <Text style={[styles.header, { color: colors.text }]}>
-        Round {currentRound}
-      </Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Host button to start the round */}
+      {gameStatus ===  isHost && (
+        <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
+          <Text style={styles.startRoundText}>Start Round</Text>
+        </TouchableOpacity>
+      )}
+      <Text style={[styles.header, { color: colors.text }]}>Round {currentRound}</Text>
+      {/* Avatars Row */}
       <View style={styles.avatarRow}>
         {players.map((player) => (
-          <View
-            key={player.id}
-            style={[
-              styles.avatarContainer,
-              player.id === currentTurn && styles.currentTurnHighlight,
-            ]}
-          >
+          <View key={player.id} style={styles.avatarContainer}>
             <Image source={avatars[player.avatar]} style={styles.avatarImage} />
             <Text style={styles.avatarName}>{player.name}</Text>
           </View>
         ))}
       </View>
+      {/* Deck and Discard Pile */}
       <View style={styles.deckDiscardContainer}>
         <TouchableOpacity onPress={drawFromDeck} style={styles.deckCard}>
           <Text style={styles.cardText}>Deck ({deck.length})</Text>
@@ -290,8 +185,8 @@ export default function GameScreen() {
           {discardPile.length > 0 ? (
             <View style={styles.card}>
               <Text style={styles.cardText}>
-                {discardPile[discardPile.length - 1].rank} of{" "}
-                {discardPile[discardPile.length - 1].suit}
+                {discardPile[discardPile.length - 1].rank}{" "}
+                {suitSymbols[discardPile[discardPile.length - 1].suit]}
               </Text>
             </View>
           ) : (
@@ -299,120 +194,39 @@ export default function GameScreen() {
           )}
         </TouchableOpacity>
       </View>
+      {/* Player Hand */}
       <Text style={[styles.subHeader, { color: colors.text }]}>Your Hand:</Text>
-      <DraxProvider>
-        <DraxList
-          data={playerHand}
-          horizontal
-          onItemReorder={({ fromIndex, toIndex }) => {
-            const newHand = [...playerHand];
-            const [removed] = newHand.splice(fromIndex, 1);
-            newHand.splice(toIndex, 0, removed);
-            setPlayerHand(newHand);
-          }}
-          keyExtractor={(item, index) => index.toString()}
-          renderItemContent={({ item, index, dragState = {} }) => (
-            <DraxView
-              payload={{ index, item }}
-              onDragStart={() => setIsDragging(true)}
-              onDragEnd={() => setIsDragging(false)}
-            >
-              <TouchableOpacity
-                onPress={() => {
-                  if (!dragState.isActive && playerId === currentTurn) {
-                    discardCard(index);
-                  }
-                }}
-              >
-                <View
-                  style={[styles.card, dragState.isActive && styles.dragging]}
-                >
-                  <Text style={styles.cardText}>
-                    {item.rank} of {item.suit}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </DraxView>
-          )}
-        />
-      </DraxProvider>
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionButton} onPress={declareRump}>
-          <Text style={styles.actionText}>Rump!</Text>
-        </TouchableOpacity>
-      </View>
-      {gameStatus === "roundEnded" && (
-        <View style={styles.readyContainer}>
-          {playersReady.includes(playerId) ? (
-            <Text style={styles.readyText}>Waiting for others...</Text>
-          ) : (
-            <TouchableOpacity
-              style={styles.hostButton}
-              onPress={declareReadyForNextRound}
-            >
-              <Text style={styles.hostButtonText}>Start Next Round</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+      <ScrollView horizontal contentContainerStyle={styles.handContainer}>
+        {playerHand.map((card, index) => (
+          <View key={index} style={styles.card}>
+            <Text style={styles.cardText}>
+              {card.rank} {suitSymbols[card.suit]}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  header: {
-    fontSize: 20,
-    fontFamily: "PressStart2P",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  subHeader: {
-    fontSize: 16,
-    fontFamily: "PressStart2P",
-    textAlign: "center",
-    marginVertical: 10,
-  },
-  avatarRow: {
-    flexDirection: "row",
-    justifyContent: "space-evenly",
-    width: "100%",
-    marginBottom: 20,
-  },
-  avatarContainer: { alignItems: "center", width: 100, padding: 5, borderRadius: 0 },
-  currentTurnHighlight: { borderWidth: 2, borderColor: "yellow" },
-  avatarImage: { width: 80, height: 80, borderRadius: 0 },
-  avatarName: {
-    fontFamily: "PressStart2P",
-    fontSize: 10,
-    marginTop: 5,
-    color: "#000",
-  },
-  deckDiscardContainer: {
-    flexDirection: "row",
-    justifyContent: "space-evenly",
-    width: "100%",
-    marginVertical: 20,
-  },
-  deckCard: {
-    width: 100,
-    height: 140,
-    backgroundColor: "#444",
+  container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  startRoundButton: {
+    backgroundColor: "#000",
+    padding: 10,
+    marginBottom: 10,
     borderRadius: 5,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 5,
   },
-  handContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 200,
-  },
+  startRoundText: { color: "#fff", fontFamily: "PressStart2P", fontSize: 14 },
+  header: { fontSize: 20, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
+  subHeader: { fontSize: 16, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 10 },
+  avatarRow: { flexDirection: "row", justifyContent: "space-evenly", width: "100%", marginBottom: 20 },
+  avatarContainer: { alignItems: "center", width: 100, padding: 5 },
+  avatarImage: { width: 80, height: 80 },
+  avatarName: { fontFamily: "PressStart2P", fontSize: 10, marginTop: 5, color: "#000" },
+  deckDiscardContainer: { flexDirection: "row", justifyContent: "space-evenly", width: "100%", marginVertical: 20 },
+  deckCard: { width: 100, height: 140, backgroundColor: "#444", borderRadius: 5, alignItems: "center", justifyContent: "center", padding: 5 },
+  handContainer: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20 },
   card: {
     width: 70,
     height: 100,
@@ -425,28 +239,5 @@ const styles = StyleSheet.create({
     padding: 5,
     marginHorizontal: 5,
   },
-  dragging: { opacity: 0.3 },
-  cardText: {
-    fontFamily: "PressStart2P",
-    fontSize: 12,
-    textAlign: "center",
-    color: "#000",
-  },
-  actions: { flexDirection: "row", marginVertical: 10 },
-  actionButton: {
-    backgroundColor: "#000",
-    padding: 10,
-    margin: 5,
-    borderRadius: 5,
-  },
-  actionText: { color: "#fff", fontFamily: "PressStart2P" },
-  hostButton: {
-    backgroundColor: "#000",
-    padding: 10,
-    marginVertical: 10,
-    borderRadius: 5,
-  },
-  hostButtonText: { color: "#fff", fontFamily: "PressStart2P" },
-  readyContainer: { marginVertical: 10, alignItems: "center" },
-  readyText: { fontFamily: "PressStart2P", fontSize: 12, color: "#000" },
+  cardText: { fontFamily: "PressStart2P", fontSize: 12, textAlign: "center", color: "#000" },
 });
