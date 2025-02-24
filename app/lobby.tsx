@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     height: 100,
     marginRight: 5,
     marginLeft: 5,
-    borderWidth: 3,
+    borderWidth: 4,
     borderTopColor: "#404040",   // dark on top
     borderLeftColor: "#404040",  // dark on left
     borderBottomColor: "#fff",   // light on bottom
