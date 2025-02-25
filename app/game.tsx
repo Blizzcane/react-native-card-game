@@ -340,6 +340,7 @@ export default function GameScreen() {
             <Text style={styles.cardText}>Empty Discard</Text>
           )}
         </TouchableOpacity>
+        
       </View>
       
       <Text style={[styles.subHeader, { color: colors.text }]}>
@@ -461,7 +462,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#404040",
   },
   currentTurnHighlight: {
-    backgroundColor: "#e3e3a3"
+    backgroundColor: "#fffc57"
   },
   avatarImage: {
     width: 80,
@@ -479,13 +480,17 @@ const styles = StyleSheet.create({
     color: "#000"
   },
   currentTurnAvatarName: {
-    color: "#800",
+    color: "Yellow",
   },
   deckDiscardContainer: {
     flexDirection: "row",
     justifyContent: "space-evenly",
     width: "100%",
     marginVertical: 20
+  },
+  discardColumn: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   deckCard: {
     width: 100,
@@ -498,6 +503,33 @@ const styles = StyleSheet.create({
   },
   disabledDeck: {
     backgroundColor: "#777",
+    opacity: 0.6
+  },
+  discardButton: {
+    marginTop: 10,
+    padding: 8,
+    width: 100,
+    backgroundColor: "#a00",
+    borderWidth: 4,
+    borderLeftColor: "#f00",
+    borderTopColor: "#f00",
+    borderRightColor: "#800",
+    borderBottomColor: "#800",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 3,
+  },
+  discardButtonText: {
+    color: "#fff",
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+  },
+  disabledButton: {
+    backgroundColor: "#777",
+    borderLeftColor: "#999",
+    borderTopColor: "#999",
+    borderRightColor: "#555",
+    borderBottomColor: "#555",
     opacity: 0.6
   },
   handContainer: {
