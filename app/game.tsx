@@ -7,13 +7,23 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@react-navigation/native";
-import DraggableFlatList from "react-native-draggable-flatlist";
-import { doc, updateDoc, onSnapshot, arrayUnion } from "firebase/firestore";
+import * as SplashScreen from "expo-splash-screen";
 import { db } from "@/firebaseConfig";
+import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import avatars from "@/utils/avatarLoader";
+
+SplashScreen.preventAutoHideAsync();
+
+const suitSymbols = {
+  hearts: "♥",
+  diamonds: "♦",
+  clubs: "♣",
+  spades: "♠",
+};
 
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
 const RANKS = [
@@ -42,7 +52,7 @@ function generateDeck() {
   return deck;
 }
 
-function shuffleArray(array: any[]) {
+function shuffleArray(array) {
   const arr = array.slice();
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -56,16 +66,15 @@ export default function GameScreen() {
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
 
-  const [deck, setDeck] = useState<any[]>([]);
-  const [discardPile, setDiscardPile] = useState<any[]>([]);
-  const [playerHand, setPlayerHand] = useState<any[]>([]);
+  const [deck, setDeck] = useState([]);
+  const [discardPile, setDiscardPile] = useState([]);
+  const [playerHand, setPlayerHand] = useState([]);
   const [currentRound, setCurrentRound] = useState(1);
-  const [gameStatus, setGameStatus] = useState("waiting");
-  const [players, setPlayers] = useState<any[]>([]);
-  const [currentTurn, setCurrentTurn] = useState<string | null>(null);
+  // Using roundStatus for the round; possible values "waiting", "started", "gameOver"
+  const [roundStatus, setRoundStatus] = useState("waiting");
+  const [players, setPlayers] = useState([]);
+  const [currentTurn, setCurrentTurn] = useState(null);
   const [isHost, setIsHost] = useState(false);
-  const [playersReady, setPlayersReady] = useState<any[]>([]);
-  const [hasDrawn, setHasDrawn] = useState(false);
 
   useEffect(() => {
     if (!roomId) return;
@@ -74,7 +83,6 @@ export default function GameScreen() {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setPlayers(data.players || []);
-        setGameStatus(data.status);
         setCurrentRound(data.currentRound || 1);
         if (data.deck) setDeck(data.deck);
         if (data.discardPile) setDiscardPile(data.discardPile);
@@ -87,7 +95,8 @@ export default function GameScreen() {
         if (data.currentTurn) {
           setCurrentTurn(data.currentTurn);
         }
-        setPlayersReady(data.playersReady || []);
+        // Update roundStatus if stored; otherwise default to "waiting"
+        setRoundStatus(data.roundStatus || "waiting");
       } else {
         Alert.alert("Game session not found!");
         router.replace("/lobby");
@@ -96,19 +105,41 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId]);
 
-  // Helper function to update player's hand in Firebase
-  const updateHandInDB = async (newHand: any[]) => {
+  // Host-only: Start Round button. The button is shown if the host is logged in and roundStatus is "waiting"
+  const initializeRound = async () => {
+    if (!isHost) return;
+    if (players.length === 0) {
+      Alert.alert("No players available to start the round.");
+      return;
+    }
+    // End the game if currentRound is 11 or higher.
+    if (currentRound >= 11) {
+      const gameRef = doc(db, "games", roomId);
+      await updateDoc(gameRef, { roundStatus: "gameOver" });
+      setRoundStatus("gameOver");
+      return;
+    }
+    const newDeck = shuffleArray(generateDeck());
+    const hands = {};
+    // Deal 9 cards to each player.
+    players.forEach((player) => {
+      hands[player.id] = newDeck.splice(0, 9);
+    });
     const gameRef = doc(db, "games", roomId);
-    await updateDoc(gameRef, { [`hands.${playerId}`]: newHand });
+    await updateDoc(gameRef, {
+      deck: newDeck,
+      discardPile: [],
+      hands: hands,
+      currentRound: currentRound + 1,
+      roundStatus: "started",
+      currentTurn: players[0]?.id,
+    });
+    setRoundStatus("started");
   };
 
   const drawFromDeck = async () => {
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
-      return;
-    }
-    if (hasDrawn) {
-      Alert.alert("You have already drawn a card this turn!");
       return;
     }
     if (deck.length === 0) {
@@ -119,7 +150,6 @@ export default function GameScreen() {
     const newDeck = deck.slice(1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
-    setHasDrawn(true);
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       deck: newDeck,
@@ -127,64 +157,39 @@ export default function GameScreen() {
     });
   };
 
-  const discardCard = async (cardIndex: number) => {
+  const drawFromDiscard = async () => {
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
       return;
     }
-    if (!hasDrawn) {
-      Alert.alert("You must draw a card before discarding!");
+    if (discardPile.length === 0) {
+      Alert.alert("The discard pile is empty!");
       return;
     }
-    if (playerHand.length === 0) return;
-    const cardToDiscard = playerHand[cardIndex];
-    if (!cardToDiscard) {
-      Alert.alert("Invalid card selection.");
-      return;
-    }
-    const newHand = [...playerHand];
-    newHand.splice(cardIndex, 1);
+    const drawnCard = discardPile[discardPile.length - 1];
+    const newDiscardPile = discardPile.slice(0, -1);
+    const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
-    updateHandInDB(newHand);
-    const newDiscardPile = [...discardPile, cardToDiscard];
-    const currentIndex = players.findIndex((p) => p.id === currentTurn);
-    const nextIndex = (currentIndex + 1) % players.length;
-    const nextTurn = players[nextIndex]?.id;
-    if (!nextTurn) {
-      Alert.alert("Error determining next turn.");
-      return;
-    }
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       discardPile: newDiscardPile,
-      currentTurn: nextTurn,
+      [`hands.${playerId}`]: newHand,
     });
-    setHasDrawn(false);
-  };
-
-  // Render each card with reordering (via long press) and a discard button.
-  const renderCard = ({ item, index, drag, isActive }: any) => {
-    return (
-      <TouchableOpacity
-        style={[styles.card, isActive && styles.activeCard]}
-        onLongPress={drag}
-      >
-        <Text style={styles.cardText}>
-          {item.rank} of {item.suit}
-        </Text>
-        <TouchableOpacity
-          style={styles.discardButton}
-          onPress={() => discardCard(index)}
-        >
-          <Text style={styles.discardButtonText}>Discard</Text>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    );
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.header, { color: colors.text }]}>Round {currentRound}</Text>
+      {/* Host Start Round Button: Visible if host and roundStatus is "waiting" */}
+      {isHost && roundStatus === "waiting" && (
+        <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
+          <Text style={styles.startRoundText}>Start Round</Text>
+        </TouchableOpacity>
+      )}
+      {/* Header: display "Game Over" if roundStatus is "gameOver", else display current round */}
+      <Text style={[styles.header, { color: colors.text }]}>
+        {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
+      </Text>
+      {/* Avatars Row */}
       <View style={styles.avatarRow}>
         {players.map((player) => (
           <View
@@ -195,20 +200,28 @@ export default function GameScreen() {
             ]}
           >
             <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-            <Text style={styles.avatarName}>{player.name}</Text>
+            <Text
+              style={[
+                styles.avatarName,
+                player.id === currentTurn && styles.currentTurnAvatarName,
+              ]}
+            >
+              {player.name}
+            </Text>
           </View>
         ))}
       </View>
+      {/* Deck and Discard Pile */}
       <View style={styles.deckDiscardContainer}>
         <TouchableOpacity onPress={drawFromDeck} style={styles.deckCard}>
           <Text style={styles.cardText}>Deck ({deck.length})</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.deckCard}>
+        <TouchableOpacity onPress={drawFromDiscard} style={styles.deckCard}>
           {discardPile.length > 0 ? (
             <View style={styles.card}>
               <Text style={styles.cardText}>
-                {discardPile[discardPile.length - 1].rank} of{" "}
-                {discardPile[discardPile.length - 1].suit}
+                {discardPile[discardPile.length - 1].rank}{" "}
+                {suitSymbols[discardPile[discardPile.length - 1].suit]}
               </Text>
             </View>
           ) : (
@@ -216,79 +229,100 @@ export default function GameScreen() {
           )}
         </TouchableOpacity>
       </View>
+      {/* Player Hand */}
       <Text style={[styles.subHeader, { color: colors.text }]}>Your Hand:</Text>
-      <DraggableFlatList
-        data={playerHand}
-        horizontal
-        keyExtractor={(item, index) => index.toString()}
-        onDragEnd={({ data }) => {
-          setPlayerHand(data);
-          updateHandInDB(data);
-        }}
-        renderItem={renderCard}
-      />
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() =>
-            Alert.alert("Rump declared!", "Ending your turn and scoring this round.")
-          }
-        >
-          <Text style={styles.actionText}>Rump!</Text>
-        </TouchableOpacity>
-      </View>
-      {gameStatus === "roundEnded" && (
-        <View style={styles.readyContainer}>
-          {playersReady.includes(playerId) ? (
-            <Text style={styles.readyText}>Waiting for others...</Text>
-          ) : (
-            <TouchableOpacity
-              style={styles.hostButton}
-              onPress={async () => {
-                const gameRef = doc(db, "games", roomId);
-                await updateDoc(gameRef, {
-                  playersReady: arrayUnion(playerId),
-                });
-              }}
-            >
-              <Text style={styles.hostButtonText}>Start Next Round</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+      <ScrollView horizontal contentContainerStyle={styles.handContainer}>
+        {playerHand.map((card, index) => (
+          <View key={index} style={styles.card}>
+            <Text style={styles.cardText}>
+              {card.rank} {suitSymbols[card.suit]}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20
+  },
+  startRoundButton: {
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: 3,
+    backgroundColor: "#c3c3c3",
+    marginVertical: 10,
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  },
+  startRoundText: {
+    color: "#fff",
+    fontFamily: "PressStart2P",
+    fontSize: 14
+  },
   header: {
     fontSize: 20,
     fontFamily: "PressStart2P",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 20
   },
   subHeader: {
     fontSize: 16,
     fontFamily: "PressStart2P",
     textAlign: "center",
-    marginVertical: 10,
+    marginVertical: 10
   },
   avatarRow: {
-    flexDirection: "row",
-    justifyContent: "space-evenly",
-    width: "100%",
-    marginBottom: 20,
+    flexDirection: "row", 
+    justifyContent: "center",
+    width: "100%", 
+    marginBottom: 20
   },
-  avatarContainer: { alignItems: "center", width: 100, padding: 5 },
-  currentTurnHighlight: { borderWidth: 2, borderColor: "yellow" },
-  avatarImage: { width: 80, height: 80 },
-  avatarName: { fontFamily: "PressStart2P", fontSize: 10, marginTop: 5, color: "#000" },
+  avatarContainer: {
+    alignItems: "center",
+    width: 100,
+    padding: 5,
+    backgroundColor: "#c3c3c3", 
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  },
+  currentTurnHighlight: {
+     
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderWidth: 4,
+    borderTopColor: "#404040",
+    borderLeftColor: "#404040",
+    borderBottomColor: "#fff",
+    borderRightColor: "#fff",
+  },
+  avatarName: {
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+    marginTop: 5,
+    color: "#000"
+  },
+  currentTurnAvatarName: {
+    color: "yellow",
+  },
   deckDiscardContainer: {
     flexDirection: "row",
     justifyContent: "space-evenly",
     width: "100%",
-    marginVertical: 20,
+    marginVertical: 20
   },
   deckCard: {
     width: 100,
@@ -297,11 +331,28 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
-    padding: 5,
+    padding: 5
+  },
+  handContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    paddingHorizontal: 20,
+    backgroundColor: "#c3c3c3",
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+    padding: 10,
+    marginVertical: 10,
+    borderRadius: 3,
+    height: "25%",
+    width: "100%",
   },
   card: {
-    width: 70,
-    height: 100,
+    height: "100%",
+    aspectRatio: 0.7,
     backgroundColor: "#fff",
     borderColor: "#000",
     borderWidth: 1,
@@ -311,39 +362,10 @@ const styles = StyleSheet.create({
     padding: 5,
     marginHorizontal: 5,
   },
-  activeCard: { opacity: 0.7 },
   cardText: {
     fontFamily: "PressStart2P",
     fontSize: 12,
     textAlign: "center",
-    color: "#000",
+    color: "#000"
   },
-  discardButton: {
-    marginTop: 5,
-    backgroundColor: "#f00",
-    padding: 5,
-    borderRadius: 3,
-  },
-  discardButtonText: {
-    color: "#fff",
-    fontFamily: "PressStart2P",
-    fontSize: 10,
-  },
-  actions: { flexDirection: "row", marginVertical: 10 },
-  actionButton: {
-    backgroundColor: "#000",
-    padding: 10,
-    margin: 5,
-    borderRadius: 5,
-  },
-  actionText: { color: "#fff", fontFamily: "PressStart2P" },
-  hostButton: {
-    backgroundColor: "#000",
-    padding: 10,
-    marginVertical: 10,
-    borderRadius: 5,
-  },
-  hostButtonText: { color: "#fff", fontFamily: "PressStart2P" },
-  readyContainer: { marginVertical: 10, alignItems: "center" },
-  readyText: { fontFamily: "PressStart2P", fontSize: 12, color: "#000" },
 });

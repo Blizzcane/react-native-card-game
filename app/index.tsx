@@ -30,9 +30,9 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.header, { color: colors.text }]}>{t("welcome")}</Text>
+      <Text style={[styles.header, { color: colors.text }]}>{t("Rump")}</Text>
       <TouchableOpacity style={styles.button} onPress={() => router.push("/PlayerSetup")}>
-        <Text style={styles.buttonText}>{t("go_to_lobby")}</Text>
+        <Text style={styles.buttonText}>{t("Enter Lobby")}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -51,16 +51,21 @@ const styles = StyleSheet.create({
     marginBottom: 20 
   },
   button: { 
-    backgroundColor: '#000', 
+    backgroundColor: '#c3c3c3', 
     paddingVertical: 10, 
     paddingHorizontal: 20, 
-    borderRadius: 5, 
-    marginVertical: 5 
+    borderRadius: 3,
+    borderWidth: 5,
+    borderLeftColor: '#fff',      // Lighter on left
+    borderTopColor: '#fff',       // Lighter on top
+    borderRightColor: '#404040',  // Darker on right
+    borderBottomColor: '#404040', // Darker on bottom
+    marginVertical: 5,
   },
   buttonText: { 
     fontSize: 14, 
     fontFamily: 'PressStart2P', 
-    color: '#fff', 
+    color: '#000', 
     textAlign: 'center' 
   },
 });
