@@ -8,7 +8,6 @@ import {
   Alert,
   Image,
   ScrollView,
-  Dimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@react-navigation/native";
@@ -19,30 +18,9 @@ import avatars from "@/utils/avatarLoader";
 
 SplashScreen.preventAutoHideAsync();
 
-const suitSymbols = {
-  hearts: "♥",
-  diamonds: "♦",
-  clubs: "♣",
-  spades: "♠",
-};
-
+const suitSymbols = { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" };
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-const RANKS = [
-  "A",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "J",
-  "Q",
-  "K",
-];
-
+const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const MAX_CARDS = 10;
 
 function generateDeck() {
@@ -72,16 +50,17 @@ export default function GameScreen() {
   const [deck, setDeck] = useState([]);
   const [discardPile, setDiscardPile] = useState([]);
   const [playerHand, setPlayerHand] = useState([]);
-  const [displayHand, setDisplayHand] = useState([]); // Local state for display order
+  const [displayHand, setDisplayHand] = useState([]);
   const [currentRound, setCurrentRound] = useState(1);
   const [roundStatus, setRoundStatus] = useState("waiting");
   const [players, setPlayers] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
   const [isHost, setIsHost] = useState(false);
-  const [hasDrawnCard, setHasDrawnCard] = useState(false); // Track if player has drawn a card
-  const [selectedCardIndex, setSelectedCardIndex] = useState(null); // For card movement
+  const [hasDrawnCard, setHasDrawnCard] = useState(false);
+  const [selectedCardIndex, setSelectedCardIndex] = useState(null);
+  const [discardMode, setDiscardMode] = useState(false);
   const scrollViewRef = useRef(null);
-  
+
   useEffect(() => {
     if (!roomId) return;
     const gameRef = doc(db, "games", roomId);
@@ -95,7 +74,6 @@ export default function GameScreen() {
         if (data.hands && data.hands[playerId]) {
           const newHand = data.hands[playerId];
           setPlayerHand(newHand);
-          // Only update displayHand if this is the first load or cards were added/removed
           if (!displayHand.length || displayHand.length !== newHand.length) {
             setDisplayHand(newHand);
           }
@@ -105,7 +83,6 @@ export default function GameScreen() {
         }
         if (data.currentTurn) {
           setCurrentTurn(data.currentTurn);
-          // Reset hasDrawnCard when it's a new player's turn
           if (data.currentTurn !== currentTurn) {
             setHasDrawnCard(false);
           }
@@ -213,16 +190,14 @@ export default function GameScreen() {
     setHasDrawnCard(true);
   };
 
+  // Discard a card and advance turn.
   const discardCard = async (index) => {
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
       return;
     }
     
-    // Get the card from the display order
     const cardToDiscard = displayHand[index];
-    
-    // Find the card in the actual hand array (matching by rank and suit)
     const cardIndex = playerHand.findIndex(
       card => card.rank === cardToDiscard.rank && card.suit === cardToDiscard.suit
     );
@@ -232,16 +207,13 @@ export default function GameScreen() {
       return;
     }
     
-    // Remove card from database hand
     const newHand = [...playerHand];
     const discardedCard = newHand.splice(cardIndex, 1)[0];
     
-    // Also remove from display hand
     const newDisplayHand = [...displayHand];
     newDisplayHand.splice(index, 1);
     setDisplayHand(newDisplayHand);
     
-    // Find the next player's turn
     const currentPlayerIndex = players.findIndex(player => player.id === playerId);
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     const nextPlayerId = players[nextPlayerIndex]?.id;
@@ -252,24 +224,26 @@ export default function GameScreen() {
       discardPile: [...discardPile, discardedCard],
       currentTurn: nextPlayerId,
     });
-    setHasDrawnCard(false); // Reset for next turn
+    setHasDrawnCard(false);
   };
 
-  // Function to handle card selection for moving
-  const selectCard = (index) => {
-    if (selectedCardIndex === index) {
-      // Deselect if tapping the same card
-      setSelectedCardIndex(null);
-    } else if (selectedCardIndex !== null) {
-      // If a card was already selected, move it to the new position
-      const newDisplayHand = [...displayHand];
-      const [card] = newDisplayHand.splice(selectedCardIndex, 1);
-      newDisplayHand.splice(index, 0, card);
-      setDisplayHand(newDisplayHand);
-      setSelectedCardIndex(null);
+  // In discard mode, a tap on a card discards it; otherwise, cards can be reordered.
+  const handleCardPress = (index) => {
+    if (discardMode) {
+      discardCard(index);
+      setDiscardMode(false);
     } else {
-      // Select the card for moving
-      setSelectedCardIndex(index);
+      if (selectedCardIndex === index) {
+        setSelectedCardIndex(null);
+      } else if (selectedCardIndex !== null) {
+        const newDisplayHand = [...displayHand];
+        const [card] = newDisplayHand.splice(selectedCardIndex, 1);
+        newDisplayHand.splice(index, 0, card);
+        setDisplayHand(newDisplayHand);
+        setSelectedCardIndex(null);
+      } else {
+        setSelectedCardIndex(index);
+      }
     }
   };
 
@@ -318,38 +292,50 @@ export default function GameScreen() {
         >
           <Text style={styles.cardText}>Deck ({deck.length})</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          onPress={drawFromDiscard}
-          style={[
-            styles.deckCard,
-            (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck
-          ]}
-          disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
-        >
-          {discardPile.length > 0 ? (
-            <View style={styles.card}>
-              <Text style={[
-                styles.cardText,
-                { color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit) ? "red" : "black" }
-              ]}>
-                {discardPile[discardPile.length - 1].rank}{" "}
-                {suitSymbols[discardPile[discardPile.length - 1].suit]}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.cardText}>Empty Discard</Text>
-          )}
-        </TouchableOpacity>
         
+        <View style={styles.discardColumn}>
+          <TouchableOpacity 
+            onPress={drawFromDiscard}
+            style={[
+              styles.deckCard,
+              (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck
+            ]}
+            disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
+          >
+            {discardPile.length > 0 ? (
+              <View style={styles.card}>
+                <Text style={[
+                  styles.cardText,
+                  { color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit) ? "red" : "black" }
+                ]}>
+                  {discardPile[discardPile.length - 1].rank}{" "}
+                  {suitSymbols[discardPile[discardPile.length - 1].suit]}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.cardText}>Empty Discard</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.discardButton,
+              !(playerId === currentTurn && hasDrawnCard) && styles.disabledButton,
+              discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" }
+            ]}
+            onPress={() => {
+              if (playerId !== currentTurn || !hasDrawnCard) {
+                Alert.alert("You must draw a card before discarding or it's not your turn!");
+                return;
+              }
+              // Toggle discard mode on click.
+              setDiscardMode(!discardMode);
+            }}
+            disabled={!(playerId === currentTurn && hasDrawnCard)}
+          >
+            <Text style={styles.discardButtonText}>Discard Card</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      
-      <Text style={[styles.subHeader, { color: colors.text }]}>
-        Your Hand: {playerHand.length}/{MAX_CARDS}
-      </Text>
-      <Text style={styles.instructions}>
-        Tap a card to {selectedCardIndex !== null ? 'place it' : 'select it'}.
-        {playerId === currentTurn ? ' Double tap to discard.' : ''}
-      </Text>
       
       <ScrollView 
         ref={scrollViewRef}
@@ -364,19 +350,7 @@ export default function GameScreen() {
               styles.card,
               selectedCardIndex === index && styles.selectedCard
             ]}
-            onPress={() => selectCard(index)}
-            onLongPress={() => {
-              if (currentTurn === playerId) {
-                Alert.alert(
-                  "Discard Card",
-                  `Discard ${card.rank} of ${card.suit}?`,
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Discard", onPress: () => discardCard(index) }
-                  ]
-                );
-              }
-            }}
+            onPress={() => handleCardPress(index)}
           >
             <Text 
               style={[
@@ -389,14 +363,6 @@ export default function GameScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
-      
-      <View style={styles.statusBar}>
-        <Text style={styles.statusText}>
-          {playerId === currentTurn ? 
-            (hasDrawnCard ? "Choose a card to discard" : "Draw a card") : 
-            "Waiting for other player"}
-        </Text>
-      </View>
     </SafeAreaView>
   );
 }
@@ -431,30 +397,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 20
   },
-  subHeader: {
-    fontSize: 16,
-    fontFamily: "PressStart2P",
-    textAlign: "center",
-    marginVertical: 10
-  },
-  instructions: {
-    fontSize: 12,
-    fontFamily: "PressStart2P",
-    textAlign: "center",
-    color: "#666",
-    marginBottom: 10
-  },
   avatarRow: {
-    flexDirection: "row", 
+    flexDirection: "row",
     justifyContent: "center",
-    width: "100%", 
+    width: "100%",
     marginBottom: 20
   },
   avatarContainer: {
     alignItems: "center",
     width: 100,
     padding: 5,
-    backgroundColor: "#c3c3c3", 
+    backgroundColor: "#c3c3c3",
     borderWidth: 4,
     borderLeftColor: "#fff",
     borderTopColor: "#fff",
@@ -488,10 +441,6 @@ const styles = StyleSheet.create({
     width: "100%",
     marginVertical: 20
   },
-  discardColumn: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
   deckCard: {
     width: 100,
     height: 140,
@@ -505,32 +454,27 @@ const styles = StyleSheet.create({
     backgroundColor: "#777",
     opacity: 0.6
   },
+  discardColumn: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   discardButton: {
+    padding: 10,
     marginTop: 10,
-    padding: 8,
-    width: 100,
-    backgroundColor: "#a00",
+    borderRadius: 3,
     borderWidth: 4,
     borderLeftColor: "#f00",
     borderTopColor: "#f00",
     borderRightColor: "#800",
     borderBottomColor: "#800",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 3,
   },
   discardButtonText: {
     color: "#fff",
     fontFamily: "PressStart2P",
-    fontSize: 10,
+    fontSize: 12
   },
   disabledButton: {
-    backgroundColor: "#777",
-    borderLeftColor: "#999",
-    borderTopColor: "#999",
-    borderRightColor: "#555",
-    borderBottomColor: "#555",
-    opacity: 0.6
+    opacity: 0.5,
   },
   handContainer: {
     flexDirection: "row",
@@ -571,21 +515,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#000"
   },
-  statusBar: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: "#c3c3c3",
-    borderWidth: 4,
-    borderLeftColor: "#404040",
-    borderTopColor: "#404040",
-    borderRightColor: "#fff",
-    borderBottomColor: "#fff",
-    width: "100%",
-    alignItems: "center"
-  },
-  statusText: {
-    fontFamily: "PressStart2P",
-    fontSize: 10,
-    color: "#000"
-  }
 });
