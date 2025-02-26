@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   SafeAreaView,
   View,
@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   ScrollView,
+  Dimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@react-navigation/native";
@@ -42,6 +43,8 @@ const RANKS = [
   "K",
 ];
 
+const MAX_CARDS = 10;
+
 function generateDeck() {
   const deck = [];
   for (const suit of SUITS) {
@@ -69,13 +72,16 @@ export default function GameScreen() {
   const [deck, setDeck] = useState([]);
   const [discardPile, setDiscardPile] = useState([]);
   const [playerHand, setPlayerHand] = useState([]);
+  const [displayHand, setDisplayHand] = useState([]); // Local state for display order
   const [currentRound, setCurrentRound] = useState(1);
-  // Using roundStatus for the round; possible values "waiting", "started", "gameOver"
   const [roundStatus, setRoundStatus] = useState("waiting");
   const [players, setPlayers] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
   const [isHost, setIsHost] = useState(false);
-
+  const [hasDrawnCard, setHasDrawnCard] = useState(false); // Track if player has drawn a card
+  const [selectedCardIndex, setSelectedCardIndex] = useState(null); // For card movement
+  const scrollViewRef = useRef(null);
+  
   useEffect(() => {
     if (!roomId) return;
     const gameRef = doc(db, "games", roomId);
@@ -87,15 +93,23 @@ export default function GameScreen() {
         if (data.deck) setDeck(data.deck);
         if (data.discardPile) setDiscardPile(data.discardPile);
         if (data.hands && data.hands[playerId]) {
-          setPlayerHand(data.hands[playerId]);
+          const newHand = data.hands[playerId];
+          setPlayerHand(newHand);
+          // Only update displayHand if this is the first load or cards were added/removed
+          if (!displayHand.length || displayHand.length !== newHand.length) {
+            setDisplayHand(newHand);
+          }
         }
         if (data.hostId === playerId) {
           setIsHost(true);
         }
         if (data.currentTurn) {
           setCurrentTurn(data.currentTurn);
+          // Reset hasDrawnCard when it's a new player's turn
+          if (data.currentTurn !== currentTurn) {
+            setHasDrawnCard(false);
+          }
         }
-        // Update roundStatus if stored; otherwise default to "waiting"
         setRoundStatus(data.roundStatus || "waiting");
       } else {
         Alert.alert("Game session not found!");
@@ -103,28 +117,27 @@ export default function GameScreen() {
       }
     });
     return () => unsubscribe();
-  }, [roomId]);
+  }, [roomId, currentTurn]);
 
-  // Host-only: Start Round button. The button is shown if the host is logged in and roundStatus is "waiting"
   const initializeRound = async () => {
     if (!isHost) return;
     if (players.length === 0) {
       Alert.alert("No players available to start the round.");
       return;
     }
-    // End the game if currentRound is 11 or higher.
     if (currentRound >= 11) {
       const gameRef = doc(db, "games", roomId);
       await updateDoc(gameRef, { roundStatus: "gameOver" });
       setRoundStatus("gameOver");
       return;
     }
+    
     const newDeck = shuffleArray(generateDeck());
     const hands = {};
-    // Deal 9 cards to each player.
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
+    
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       deck: newDeck,
@@ -135,6 +148,7 @@ export default function GameScreen() {
       currentTurn: players[0]?.id,
     });
     setRoundStatus("started");
+    setHasDrawnCard(false);
   };
 
   const drawFromDeck = async () => {
@@ -142,19 +156,30 @@ export default function GameScreen() {
       Alert.alert("Not your turn!");
       return;
     }
+    if (hasDrawnCard) {
+      Alert.alert("You've already drawn a card this turn!");
+      return;
+    }
     if (deck.length === 0) {
       Alert.alert("The deck is empty!");
       return;
     }
+    if (playerHand.length >= MAX_CARDS) {
+      Alert.alert(`You can only have ${MAX_CARDS} cards in your hand. Please discard first.`);
+      return;
+    }
+    
     const drawnCard = deck[0];
     const newDeck = deck.slice(1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
+    
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       deck: newDeck,
       [`hands.${playerId}`]: newHand,
     });
+    setHasDrawnCard(true);
   };
 
   const drawFromDiscard = async () => {
@@ -162,34 +187,104 @@ export default function GameScreen() {
       Alert.alert("Not your turn!");
       return;
     }
+    if (hasDrawnCard) {
+      Alert.alert("You've already drawn a card this turn!");
+      return;
+    }
     if (discardPile.length === 0) {
       Alert.alert("The discard pile is empty!");
       return;
     }
+    if (playerHand.length >= MAX_CARDS) {
+      Alert.alert(`You can only have ${MAX_CARDS} cards in your hand. Please discard first.`);
+      return;
+    }
+    
     const drawnCard = discardPile[discardPile.length - 1];
     const newDiscardPile = discardPile.slice(0, -1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
+    
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       discardPile: newDiscardPile,
       [`hands.${playerId}`]: newHand,
     });
+    setHasDrawnCard(true);
+  };
+
+  const discardCard = async (index) => {
+    if (playerId !== currentTurn) {
+      Alert.alert("Not your turn!");
+      return;
+    }
+    
+    // Get the card from the display order
+    const cardToDiscard = displayHand[index];
+    
+    // Find the card in the actual hand array (matching by rank and suit)
+    const cardIndex = playerHand.findIndex(
+      card => card.rank === cardToDiscard.rank && card.suit === cardToDiscard.suit
+    );
+    
+    if (cardIndex === -1) {
+      Alert.alert("Error: Card not found");
+      return;
+    }
+    
+    // Remove card from database hand
+    const newHand = [...playerHand];
+    const discardedCard = newHand.splice(cardIndex, 1)[0];
+    
+    // Also remove from display hand
+    const newDisplayHand = [...displayHand];
+    newDisplayHand.splice(index, 1);
+    setDisplayHand(newDisplayHand);
+    
+    // Find the next player's turn
+    const currentPlayerIndex = players.findIndex(player => player.id === playerId);
+    const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+    const nextPlayerId = players[nextPlayerIndex]?.id;
+    
+    const gameRef = doc(db, "games", roomId);
+    await updateDoc(gameRef, {
+      [`hands.${playerId}`]: newHand,
+      discardPile: [...discardPile, discardedCard],
+      currentTurn: nextPlayerId,
+    });
+    setHasDrawnCard(false); // Reset for next turn
+  };
+
+  // Function to handle card selection for moving
+  const selectCard = (index) => {
+    if (selectedCardIndex === index) {
+      // Deselect if tapping the same card
+      setSelectedCardIndex(null);
+    } else if (selectedCardIndex !== null) {
+      // If a card was already selected, move it to the new position
+      const newDisplayHand = [...displayHand];
+      const [card] = newDisplayHand.splice(selectedCardIndex, 1);
+      newDisplayHand.splice(index, 0, card);
+      setDisplayHand(newDisplayHand);
+      setSelectedCardIndex(null);
+    } else {
+      // Select the card for moving
+      setSelectedCardIndex(index);
+    }
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Host Start Round Button: Visible if host and roundStatus is "waiting" */}
       {isHost && roundStatus === "waiting" && (
         <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
           <Text style={styles.startRoundText}>Start Round</Text>
         </TouchableOpacity>
       )}
-      {/* Header: display "Game Over" if roundStatus is "gameOver", else display current round */}
+      
       <Text style={[styles.header, { color: colors.text }]}>
         {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
       </Text>
-      {/* Avatars Row */}
+      
       <View style={styles.avatarRow}>
         {players.map((player) => (
           <View
@@ -211,15 +306,32 @@ export default function GameScreen() {
           </View>
         ))}
       </View>
-      {/* Deck and Discard Pile */}
+      
       <View style={styles.deckDiscardContainer}>
-        <TouchableOpacity onPress={drawFromDeck} style={styles.deckCard}>
+        <TouchableOpacity 
+          onPress={drawFromDeck} 
+          style={[
+            styles.deckCard,
+            (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck
+          ]}
+          disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+        >
           <Text style={styles.cardText}>Deck ({deck.length})</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={drawFromDiscard} style={styles.deckCard}>
+        <TouchableOpacity 
+          onPress={drawFromDiscard}
+          style={[
+            styles.deckCard,
+            (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck
+          ]}
+          disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
+        >
           {discardPile.length > 0 ? (
             <View style={styles.card}>
-              <Text style={styles.cardText}>
+              <Text style={[
+                styles.cardText,
+                { color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit) ? "red" : "black" }
+              ]}>
                 {discardPile[discardPile.length - 1].rank}{" "}
                 {suitSymbols[discardPile[discardPile.length - 1].suit]}
               </Text>
@@ -228,18 +340,63 @@ export default function GameScreen() {
             <Text style={styles.cardText}>Empty Discard</Text>
           )}
         </TouchableOpacity>
+        
       </View>
-      {/* Player Hand */}
-      <Text style={[styles.subHeader, { color: colors.text }]}>Your Hand:</Text>
-      <ScrollView horizontal contentContainerStyle={styles.handContainer}>
-        {playerHand.map((card, index) => (
-          <View key={index} style={styles.card}>
-            <Text style={styles.cardText}>
+      
+      <Text style={[styles.subHeader, { color: colors.text }]}>
+        Your Hand: {playerHand.length}/{MAX_CARDS}
+      </Text>
+      <Text style={styles.instructions}>
+        Tap a card to {selectedCardIndex !== null ? 'place it' : 'select it'}.
+        {playerId === currentTurn ? ' Double tap to discard.' : ''}
+      </Text>
+      
+      <ScrollView 
+        ref={scrollViewRef}
+        horizontal
+        contentContainerStyle={styles.handContainer}
+        showsHorizontalScrollIndicator={true}
+      >
+        {displayHand.map((card, index) => (
+          <TouchableOpacity
+            key={`${card.rank}-${card.suit}-${index}`}
+            style={[
+              styles.card,
+              selectedCardIndex === index && styles.selectedCard
+            ]}
+            onPress={() => selectCard(index)}
+            onLongPress={() => {
+              if (currentTurn === playerId) {
+                Alert.alert(
+                  "Discard Card",
+                  `Discard ${card.rank} of ${card.suit}?`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Discard", onPress: () => discardCard(index) }
+                  ]
+                );
+              }
+            }}
+          >
+            <Text 
+              style={[
+                styles.cardText,
+                { color: ["hearts", "diamonds"].includes(card.suit) ? "red" : "black" }
+              ]}
+            >
               {card.rank} {suitSymbols[card.suit]}
             </Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
+      
+      <View style={styles.statusBar}>
+        <Text style={styles.statusText}>
+          {playerId === currentTurn ? 
+            (hasDrawnCard ? "Choose a card to discard" : "Draw a card") : 
+            "Waiting for other player"}
+        </Text>
+      </View>
     </SafeAreaView>
   );
 }
@@ -280,6 +437,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginVertical: 10
   },
+  instructions: {
+    fontSize: 12,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    color: "#666",
+    marginBottom: 10
+  },
   avatarRow: {
     flexDirection: "row", 
     justifyContent: "center",
@@ -298,7 +462,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#404040",
   },
   currentTurnHighlight: {
-     
+    backgroundColor: "#fffc57"
   },
   avatarImage: {
     width: 80,
@@ -316,13 +480,17 @@ const styles = StyleSheet.create({
     color: "#000"
   },
   currentTurnAvatarName: {
-    color: "yellow",
+    color: "Yellow",
   },
   deckDiscardContainer: {
     flexDirection: "row",
     justifyContent: "space-evenly",
     width: "100%",
     marginVertical: 20
+  },
+  discardColumn: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   deckCard: {
     width: 100,
@@ -333,11 +501,41 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 5
   },
+  disabledDeck: {
+    backgroundColor: "#777",
+    opacity: 0.6
+  },
+  discardButton: {
+    marginTop: 10,
+    padding: 8,
+    width: 100,
+    backgroundColor: "#a00",
+    borderWidth: 4,
+    borderLeftColor: "#f00",
+    borderTopColor: "#f00",
+    borderRightColor: "#800",
+    borderBottomColor: "#800",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 3,
+  },
+  discardButtonText: {
+    color: "#fff",
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+  },
+  disabledButton: {
+    backgroundColor: "#777",
+    borderLeftColor: "#999",
+    borderTopColor: "#999",
+    borderRightColor: "#555",
+    borderBottomColor: "#555",
+    opacity: 0.6
+  },
   handContainer: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
     backgroundColor: "#c3c3c3",
     borderWidth: 4,
     borderLeftColor: "#fff",
@@ -347,12 +545,12 @@ const styles = StyleSheet.create({
     padding: 10,
     marginVertical: 10,
     borderRadius: 3,
-    height: "25%",
-    width: "100%",
+    minHeight: 160,
+    minWidth: "100%"
   },
   card: {
-    height: "100%",
-    aspectRatio: 0.7,
+    height: 140,
+    width: 100,
     backgroundColor: "#fff",
     borderColor: "#000",
     borderWidth: 1,
@@ -362,10 +560,32 @@ const styles = StyleSheet.create({
     padding: 5,
     marginHorizontal: 5,
   },
+  selectedCard: {
+    backgroundColor: "#ffffd0",
+    borderColor: "#ff8800",
+    borderWidth: 2,
+  },
   cardText: {
     fontFamily: "PressStart2P",
     fontSize: 12,
     textAlign: "center",
     color: "#000"
   },
+  statusBar: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#c3c3c3",
+    borderWidth: 4,
+    borderLeftColor: "#404040",
+    borderTopColor: "#404040",
+    borderRightColor: "#fff",
+    borderBottomColor: "#fff",
+    width: "100%",
+    alignItems: "center"
+  },
+  statusText: {
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+    color: "#000"
+  }
 });
