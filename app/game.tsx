@@ -20,8 +20,19 @@ SplashScreen.preventAutoHideAsync();
 
 const suitSymbols = { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" };
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
+// Our rank order is modified below via our helper (see getCardValues)
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const MAX_CARDS = 10;
+
+// Helper: returns possible numeric values for a card.
+// For Ace, returns [1, 11]. For J, returns [12], Q [13], K [14]; otherwise, the numeric value.
+function getCardValues(card) {
+  if (card.rank === "A") return [1, 11];
+  if (card.rank === "J") return [12];
+  if (card.rank === "Q") return [13];
+  if (card.rank === "K") return [14];
+  return [parseInt(card.rank)];
+}
 
 function generateDeck() {
   const deck = [];
@@ -42,6 +53,60 @@ function shuffleArray(array) {
   return arr;
 }
 
+// Determines if two cards (of the same suit) are consecutive
+// This function returns true if there exists ANY combination of values for card1 and card2 such that card2 - card1 === 1.
+function isConsecutive(card1, card2) {
+  if (card1.suit !== card2.suit) return false;
+  const vals1 = getCardValues(card1);
+  const vals2 = getCardValues(card2);
+  for (const v1 of vals1) {
+    for (const v2 of vals2) {
+      if (v2 - v1 === 1) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Computes contiguous groups in the hand that form valid sets or runs.
+// For sets: a group of adjacent cards with the same rank.
+// For runs: a group of adjacent cards for which each adjacent pair is consecutive.
+function computeGroups(hand) {
+  const groups = [];
+  
+  // Compute set groups.
+  let i = 0;
+  while(i < hand.length) {
+    let j = i + 1;
+    while(j < hand.length && hand[j].rank === hand[i].rank) {
+      j++;
+    }
+    if (j - i >= 2) {
+      groups.push({ indices: Array.from({length: j-i}, (_, k) => i + k), type: "set" });
+    }
+    i = j;
+  }
+  
+  // Compute run groups.
+  i = 0;
+  while(i < hand.length) {
+    const groupIndices = [i];
+    while(i < hand.length - 1 && isConsecutive(hand[i], hand[i+1])) {
+      groupIndices.push(i+1);
+      i++;
+    }
+    if(groupIndices.length >= 2) {
+      groups.push({ indices: groupIndices, type: "run" });
+    }
+    i++;
+  }
+  return groups;
+}
+
+// Preset palette of unique colors.
+const groupColors = ["#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3"];
+
 export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
@@ -59,7 +124,6 @@ export default function GameScreen() {
   const [hasDrawnCard, setHasDrawnCard] = useState(false);
   const [selectedCardIndex, setSelectedCardIndex] = useState(null);
   const [discardMode, setDiscardMode] = useState(false);
-  // New state for Rump mode toggle
   const [rumpMode, setRumpMode] = useState(false);
   const scrollViewRef = useRef(null);
 
@@ -110,13 +174,11 @@ export default function GameScreen() {
       setRoundStatus("gameOver");
       return;
     }
-    
     const newDeck = shuffleArray(generateDeck());
     const hands = {};
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
-    
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       deck: newDeck,
@@ -147,12 +209,10 @@ export default function GameScreen() {
       Alert.alert(`You can only have ${MAX_CARDS} cards in your hand. Please discard first.`);
       return;
     }
-    
     const drawnCard = deck[0];
     const newDeck = deck.slice(1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
-    
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       deck: newDeck,
@@ -178,12 +238,10 @@ export default function GameScreen() {
       Alert.alert(`You can only have ${MAX_CARDS} cards in your hand. Please discard first.`);
       return;
     }
-    
     const drawnCard = discardPile[discardPile.length - 1];
     const newDiscardPile = discardPile.slice(0, -1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
-    
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       discardPile: newDiscardPile,
@@ -198,28 +256,22 @@ export default function GameScreen() {
       Alert.alert("Not your turn!");
       return;
     }
-    
     const cardToDiscard = displayHand[index];
     const cardIndex = playerHand.findIndex(
-      card => card.rank === cardToDiscard.rank && card.suit === cardToDiscard.suit
+      (card) => card.rank === cardToDiscard.rank && card.suit === cardToDiscard.suit
     );
-    
     if (cardIndex === -1) {
       Alert.alert("Error: Card not found");
       return;
     }
-    
     const newHand = [...playerHand];
     const discardedCard = newHand.splice(cardIndex, 1)[0];
-    
     const newDisplayHand = [...displayHand];
     newDisplayHand.splice(index, 1);
     setDisplayHand(newDisplayHand);
-    
-    const currentPlayerIndex = players.findIndex(player => player.id === playerId);
+    const currentPlayerIndex = players.findIndex((player) => player.id === playerId);
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     const nextPlayerId = players[nextPlayerIndex]?.id;
-    
     const gameRef = doc(db, "games", roomId);
     await updateDoc(gameRef, {
       [`hands.${playerId}`]: newHand,
@@ -229,7 +281,7 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  // In discard mode, a tap on a card discards it; otherwise, cards can be reordered.
+  // In discard mode, tapping a card discards it; otherwise, cards can be reordered.
   const handleCardPress = (index) => {
     if (discardMode) {
       discardCard(index);
@@ -249,8 +301,35 @@ export default function GameScreen() {
     }
   };
 
-  // Conditions: both buttons are enabled only when it's the player's turn and they have drawn a card.
-  // Additionally, if one mode is active, the other button is disabled.
+  // Compute groups in the displayHand.
+  const groups = computeGroups(displayHand);
+  // Create a mapping from card index to a unique highlight color.
+  const highlightMapping = {};
+  let colorIndex = 0;
+  // First assign set groups (taking precedence).
+  groups
+    .filter((g) => g.type === "set")
+    .forEach((group) => {
+      const color = groupColors[colorIndex % groupColors.length];
+      colorIndex++;
+      group.indices.forEach((idx) => {
+        highlightMapping[idx] = color;
+      });
+    });
+  // Then assign run groups if a card hasn't already been colored.
+  groups
+    .filter((g) => g.type === "run")
+    .forEach((group) => {
+      const color = groupColors[colorIndex % groupColors.length];
+      colorIndex++;
+      group.indices.forEach((idx) => {
+        if (!highlightMapping[idx]) {
+          highlightMapping[idx] = color;
+        }
+      });
+    });
+
+  // Conditions for toggling modes (using same condition as before).
   const canToggleDiscard = playerId === currentTurn && hasDrawnCard && !rumpMode;
   const canToggleRump = playerId === currentTurn && hasDrawnCard && !discardMode;
 
@@ -261,11 +340,9 @@ export default function GameScreen() {
           <Text style={styles.startRoundText}>Start Round</Text>
         </TouchableOpacity>
       )}
-      
       <Text style={[styles.header, { color: colors.text }]}>
         {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
       </Text>
-      
       <View style={styles.avatarRow}>
         {players.map((player) => (
           <View
@@ -287,34 +364,41 @@ export default function GameScreen() {
           </View>
         ))}
       </View>
-      
       <View style={styles.deckDiscardContainer}>
-        <TouchableOpacity 
-          onPress={drawFromDeck} 
+        <TouchableOpacity
+          onPress={drawFromDeck}
           style={[
             styles.deckCard,
-            (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck
+            (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
           ]}
           disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
         >
           <Text style={styles.cardText}>Deck ({deck.length})</Text>
         </TouchableOpacity>
-        
         <View style={styles.discardColumn}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={drawFromDiscard}
             style={[
               styles.deckCard,
-              (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck
+              (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
+                styles.disabledDeck,
             ]}
             disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
           >
             {discardPile.length > 0 ? (
               <View style={styles.card}>
-                <Text style={[
-                  styles.cardText,
-                  { color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit) ? "red" : "black" }
-                ]}>
+                <Text
+                  style={[
+                    styles.cardText,
+                    {
+                      color: ["hearts", "diamonds"].includes(
+                        discardPile[discardPile.length - 1].suit
+                      )
+                        ? "red"
+                        : "black",
+                    },
+                  ]}
+                >
                   {discardPile[discardPile.length - 1].rank}{" "}
                   {suitSymbols[discardPile[discardPile.length - 1].suit]}
                 </Text>
@@ -327,24 +411,25 @@ export default function GameScreen() {
             style={[
               styles.discardButton,
               !canToggleDiscard && styles.disabledButton,
-              discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" }
+              discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
             ]}
             onPress={() => {
               if (!canToggleDiscard) {
                 Alert.alert("You cannot toggle Discard mode right now!");
                 return;
               }
-              // Toggle discard mode and ensure rump mode is off.
               setDiscardMode(!discardMode);
               if (!discardMode) setRumpMode(false);
             }}
             disabled={!canToggleDiscard}
           >
-            <Text style={[
-              styles.discardButtonText,
-              !canToggleDiscard && styles.disabledButton,
-              discardMode ? { color: "#fff" } : { color: "#000" }
-            ]}>
+            <Text
+              style={[
+                styles.discardButtonText,
+                !canToggleDiscard && styles.disabledButton,
+                discardMode ? { color: "#fff" } : { color: "#000" },
+              ]}
+            >
               Discard
             </Text>
           </TouchableOpacity>
@@ -352,55 +437,66 @@ export default function GameScreen() {
             style={[
               styles.rumpButton,
               !canToggleRump && styles.disabledButton,
-              rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" }
+              rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
             ]}
             onPress={() => {
               if (!canToggleRump) {
                 Alert.alert("You cannot toggle Rump mode right now!");
                 return;
               }
-              // Toggle rump mode and ensure discard mode is off.
               setRumpMode(!rumpMode);
               if (!rumpMode) setDiscardMode(false);
             }}
             disabled={!canToggleRump}
           >
-            <Text style={[
-              styles.rumpButtonText,
-              !canToggleRump && styles.disabledButton,
-              rumpMode ? { color: "#fff" } : { color: "#000" }
-            ]}>
+            <Text
+              style={[
+                styles.rumpButtonText,
+                !canToggleRump && styles.disabledButton,
+                rumpMode ? { color: "#fff" } : { color: "#000" },
+              ]}
+            >
               Rump
             </Text>
           </TouchableOpacity>
         </View>
       </View>
-      
-      <ScrollView 
+      <ScrollView
         ref={scrollViewRef}
         horizontal
         contentContainerStyle={styles.handContainer}
         showsHorizontalScrollIndicator={true}
       >
-        {displayHand.map((card, index) => (
-          <TouchableOpacity
-            key={`${card.rank}-${card.suit}-${index}`}
-            style={[
-              styles.card,
-              selectedCardIndex === index && styles.selectedCard
-            ]}
-            onPress={() => handleCardPress(index)}
-          >
-            <Text 
+        {displayHand.map((card, index) => {
+          // If this card is in a valid group, apply its unique border color.
+          const comboStyle = highlightMapping[index]
+            ? { borderColor: highlightMapping[index], borderWidth: 3 }
+            : null;
+          return (
+            <TouchableOpacity
+              key={`${card.rank}-${card.suit}-${index}`}
               style={[
-                styles.cardText,
-                { color: ["hearts", "diamonds"].includes(card.suit) ? "red" : "black" }
+                styles.card,
+                selectedCardIndex === index && styles.selectedCard,
+                comboStyle,
               ]}
+              onPress={() => handleCardPress(index)}
             >
-              {card.rank} {suitSymbols[card.suit]}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.cardText,
+                  {
+                    color: ["hearts", "diamonds"].includes(card.suit)
+                      ? "red"
+                      : "black",
+                  },
+                ]}
+              >
+                {card.rank} {suitSymbols[card.suit]}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -411,7 +507,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 20
+    padding: 20,
   },
   startRoundButton: {
     padding: 10,
@@ -428,19 +524,19 @@ const styles = StyleSheet.create({
   startRoundText: {
     color: "#fff",
     fontFamily: "PressStart2P",
-    fontSize: 14
+    fontSize: 14,
   },
   header: {
     fontSize: 20,
     fontFamily: "PressStart2P",
     textAlign: "center",
-    marginBottom: 20
+    marginBottom: 20,
   },
   avatarRow: {
     flexDirection: "row",
     justifyContent: "center",
     width: "100%",
-    marginBottom: 20
+    marginBottom: 20,
   },
   avatarContainer: {
     alignItems: "center",
@@ -454,7 +550,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#404040",
   },
   currentTurnHighlight: {
-    backgroundColor: "#fffc57"
+    backgroundColor: "#fffc57",
   },
   avatarImage: {
     width: 80,
@@ -469,7 +565,7 @@ const styles = StyleSheet.create({
     fontFamily: "PressStart2P",
     fontSize: 10,
     marginTop: 5,
-    color: "#000"
+    color: "#000",
   },
   currentTurnAvatarName: {
     color: "Yellow",
@@ -478,7 +574,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-evenly",
     width: "100%",
-    marginVertical: 20
+    marginVertical: 20,
   },
   deckCard: {
     width: 100,
@@ -487,11 +583,11 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
-    padding: 5
+    padding: 5,
   },
   disabledDeck: {
     backgroundColor: "#777",
-    opacity: 0.6
+    opacity: 0.6,
   },
   discardColumn: {
     alignItems: "center",
@@ -510,7 +606,7 @@ const styles = StyleSheet.create({
   discardButtonText: {
     color: "#000",
     fontFamily: "PressStart2P",
-    fontSize: 12
+    fontSize: 12,
   },
   disabledButton: {
     opacity: 0.5,
@@ -529,7 +625,7 @@ const styles = StyleSheet.create({
     color: "#000",
     fontFamily: "PressStart2P",
     fontSize: 12,
-    textAlign: "center"
+    textAlign: "center",
   },
   handContainer: {
     flexDirection: "row",
@@ -545,7 +641,7 @@ const styles = StyleSheet.create({
     marginVertical: 10,
     borderRadius: 3,
     minHeight: 160,
-    minWidth: "100%"
+    minWidth: "100%",
   },
   card: {
     height: 140,
@@ -568,6 +664,6 @@ const styles = StyleSheet.create({
     fontFamily: "PressStart2P",
     fontSize: 12,
     textAlign: "center",
-    color: "#000"
+    color: "#000",
   },
 });
