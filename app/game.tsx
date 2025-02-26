@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   Alert,
   Image,
-  ScrollView,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@react-navigation/native";
@@ -20,12 +21,10 @@ SplashScreen.preventAutoHideAsync();
 
 const suitSymbols = { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" };
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-// Our rank order is modified below via our helper (see getCardValues)
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const MAX_CARDS = 10;
 
 // Helper: returns possible numeric values for a card.
-// For Ace, returns [1, 11]. For J, returns [12], Q [13], K [14]; otherwise, the numeric value.
 function getCardValues(card) {
   if (card.rank === "A") return [1, 11];
   if (card.rank === "J") return [12];
@@ -53,50 +52,46 @@ function shuffleArray(array) {
   return arr;
 }
 
-// Determines if two cards (of the same suit) are consecutive
-// This function returns true if there exists ANY combination of values for card1 and card2 such that card2 - card1 === 1.
+// Determines if two cards (of the same suit) are consecutive.
 function isConsecutive(card1, card2) {
   if (card1.suit !== card2.suit) return false;
   const vals1 = getCardValues(card1);
   const vals2 = getCardValues(card2);
   for (const v1 of vals1) {
     for (const v2 of vals2) {
-      if (v2 - v1 === 1) {
-        return true;
-      }
+      if (v2 - v1 === 1) return true;
     }
   }
   return false;
 }
 
 // Computes contiguous groups in the hand that form valid sets or runs.
-// For sets: a group of adjacent cards with the same rank.
-// For runs: a group of adjacent cards for which each adjacent pair is consecutive.
 function computeGroups(hand) {
   const groups = [];
-  
   // Compute set groups.
   let i = 0;
-  while(i < hand.length) {
+  while (i < hand.length) {
     let j = i + 1;
-    while(j < hand.length && hand[j].rank === hand[i].rank) {
+    while (j < hand.length && hand[j].rank === hand[i].rank) {
       j++;
     }
     if (j - i >= 2) {
-      groups.push({ indices: Array.from({length: j-i}, (_, k) => i + k), type: "set" });
+      groups.push({
+        indices: Array.from({ length: j - i }, (_, k) => i + k),
+        type: "set",
+      });
     }
     i = j;
   }
-  
   // Compute run groups.
   i = 0;
-  while(i < hand.length) {
+  while (i < hand.length) {
     const groupIndices = [i];
-    while(i < hand.length - 1 && isConsecutive(hand[i], hand[i+1])) {
-      groupIndices.push(i+1);
+    while (i < hand.length - 1 && isConsecutive(hand[i], hand[i + 1])) {
+      groupIndices.push(i + 1);
       i++;
     }
-    if(groupIndices.length >= 2) {
+    if (groupIndices.length >= 2) {
       groups.push({ indices: groupIndices, type: "run" });
     }
     i++;
@@ -107,10 +102,50 @@ function computeGroups(hand) {
 // Preset palette of unique colors.
 const groupColors = ["#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3"];
 
+// A helper to mimic media queries – returns sizes based on width (in pixels).
+function getResponsiveSizes(width) {
+  if (width < 600) {
+    // Small screen
+    return {
+      card: { width: 60, height: 80 },
+      avatar: { width: 80, height: 90 },
+    };
+  } else if (width < 1024) {
+    // Medium screen
+    return {
+      card: { width: 70, height: 90 },
+      avatar: { width: 90, height: 110 },
+    };
+  } else {
+    // Large screen
+    return {
+      card: { width: 80, height: 110 },
+      avatar: { width: 100, height: 120 },
+    };
+  }
+}
+
 export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
+  const { width, height } = useWindowDimensions();
+  const isWeb = Platform.OS === "web";
+  const isLandscape = width > height;
+
+  // For web, we want column view with responsive sizes;
+  // for native, we use orientation-based sizes.
+  const responsiveSizes = getResponsiveSizes(width);
+  const responsiveCardSize = isWeb
+    ? responsiveSizes.card
+    : isLandscape
+    ? { width: 60, height: 80 }
+    : { width: 80, height: 110 };
+  const responsiveAvatarContainer = isWeb
+    ? responsiveSizes.avatar
+    : isLandscape
+    ? { width: 80, height: 90 }
+    : { width: 100, height: 120 };
 
   const [deck, setDeck] = useState([]);
   const [discardPile, setDiscardPile] = useState([]);
@@ -250,7 +285,6 @@ export default function GameScreen() {
     setHasDrawnCard(true);
   };
 
-  // Discard a card and advance turn.
   const discardCard = async (index) => {
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
@@ -281,7 +315,6 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  // In discard mode, tapping a card discards it; otherwise, cards can be reordered.
   const handleCardPress = (index) => {
     if (discardMode) {
       discardCard(index);
@@ -301,225 +334,565 @@ export default function GameScreen() {
     }
   };
 
-  // Compute groups in the displayHand.
+  // Compute groups in displayHand.
   const groups = computeGroups(displayHand);
-  // Create a mapping from card index to a unique highlight color.
   const highlightMapping = {};
   let colorIndex = 0;
-  // First assign set groups (taking precedence).
-  groups
-    .filter((g) => g.type === "set")
-    .forEach((group) => {
-      const color = groupColors[colorIndex % groupColors.length];
-      colorIndex++;
-      group.indices.forEach((idx) => {
+  groups.filter((g) => g.type === "set").forEach((group) => {
+    const color = groupColors[colorIndex % groupColors.length];
+    colorIndex++;
+    group.indices.forEach((idx) => {
+      highlightMapping[idx] = color;
+    });
+  });
+  groups.filter((g) => g.type === "run").forEach((group) => {
+    const color = groupColors[colorIndex % groupColors.length];
+    colorIndex++;
+    group.indices.forEach((idx) => {
+      if (!highlightMapping[idx]) {
         highlightMapping[idx] = color;
-      });
+      }
     });
-  // Then assign run groups if a card hasn't already been colored.
-  groups
-    .filter((g) => g.type === "run")
-    .forEach((group) => {
-      const color = groupColors[colorIndex % groupColors.length];
-      colorIndex++;
-      group.indices.forEach((idx) => {
-        if (!highlightMapping[idx]) {
-          highlightMapping[idx] = color;
-        }
-      });
-    });
+  });
 
-  // Conditions for toggling modes (using same condition as before).
   const canToggleDiscard = playerId === currentTurn && hasDrawnCard && !rumpMode;
   const canToggleRump = playerId === currentTurn && hasDrawnCard && !discardMode;
 
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {isHost && roundStatus === "waiting" && (
-        <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
-          <Text style={styles.startRoundText}>Start Round</Text>
-        </TouchableOpacity>
-      )}
-      <Text style={[styles.header, { color: colors.text }]}>
-        {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
-      </Text>
-      <View style={styles.avatarRow}>
-        {players.map((player) => (
-          <View
-            key={player.id}
-            style={[
-              styles.avatarContainer,
-              player.id === currentTurn && styles.currentTurnHighlight,
-            ]}
-          >
-            <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-            <Text
-              style={[
-                styles.avatarName,
-                player.id === currentTurn && styles.currentTurnAvatarName,
-              ]}
-            >
-              {player.name}
-            </Text>
-          </View>
-        ))}
-      </View>
-      <View style={styles.deckDiscardContainer}>
-        <TouchableOpacity
-          onPress={drawFromDeck}
-          style={[
-            styles.deckCard,
-            (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
-          ]}
-          disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
-        >
-          <Text style={styles.cardText}>Deck ({deck.length})</Text>
-        </TouchableOpacity>
-        <View style={styles.discardColumn}>
-          <TouchableOpacity
-            onPress={drawFromDiscard}
-            style={[
-              styles.deckCard,
-              (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
-                styles.disabledDeck,
-            ]}
-            disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
-          >
-            {discardPile.length > 0 ? (
-              <View style={styles.card}>
-                <Text
-                  style={[
-                    styles.cardText,
-                    {
-                      color: ["hearts", "diamonds"].includes(
-                        discardPile[discardPile.length - 1].suit
-                      )
-                        ? "red"
-                        : "black",
-                    },
-                  ]}
-                >
-                  {discardPile[discardPile.length - 1].rank}{" "}
-                  {suitSymbols[discardPile[discardPile.length - 1].suit]}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.cardText}>Empty Discard</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.discardButton,
-              !canToggleDiscard && styles.disabledButton,
-              discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-            ]}
-            onPress={() => {
-              if (!canToggleDiscard) {
-                Alert.alert("You cannot toggle Discard mode right now!");
-                return;
-              }
-              setDiscardMode(!discardMode);
-              if (!discardMode) setRumpMode(false);
-            }}
-            disabled={!canToggleDiscard}
-          >
-            <Text
-              style={[
-                styles.discardButtonText,
-                !canToggleDiscard && styles.disabledButton,
-                discardMode ? { color: "#fff" } : { color: "#000" },
-              ]}
-            >
-              Discard
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.rumpButton,
-              !canToggleRump && styles.disabledButton,
-              rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-            ]}
-            onPress={() => {
-              if (!canToggleRump) {
-                Alert.alert("You cannot toggle Rump mode right now!");
-                return;
-              }
-              setRumpMode(!rumpMode);
-              if (!rumpMode) setDiscardMode(false);
-            }}
-            disabled={!canToggleRump}
-          >
-            <Text
-              style={[
-                styles.rumpButtonText,
-                !canToggleRump && styles.disabledButton,
-                rumpMode ? { color: "#fff" } : { color: "#000" },
-              ]}
-            >
-              Rump
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-      <ScrollView
-        ref={scrollViewRef}
-        horizontal
-        contentContainerStyle={styles.handContainer}
-        showsHorizontalScrollIndicator={true}
-      >
-        {displayHand.map((card, index) => {
-          // If this card is in a valid group, apply its unique border color.
-          const comboStyle = highlightMapping[index]
-            ? { borderColor: highlightMapping[index], borderWidth: 3 }
-            : null;
-          return (
-            <TouchableOpacity
-              key={`${card.rank}-${card.suit}-${index}`}
-              style={[
-                styles.card,
-                selectedCardIndex === index && styles.selectedCard,
-                comboStyle,
-              ]}
-              onPress={() => handleCardPress(index)}
-            >
-              <Text
+  // Now decide on layout based on platform.
+  // On web, we keep a column layout with our responsive sizes.
+  if (isWeb) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.content}>
+          {isHost && roundStatus === "waiting" && (
+            <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
+              <Text style={styles.startRoundText}>Start Round</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.header, { color: colors.text }]}>
+            {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
+          </Text>
+          <View style={styles.avatarRow}>
+            {players.map((player) => (
+              <View
+                key={player.id}
                 style={[
-                  styles.cardText,
-                  {
-                    color: ["hearts", "diamonds"].includes(card.suit)
-                      ? "red"
-                      : "black",
-                  },
+                  styles.avatarContainer,
+                  responsiveAvatarContainer,
+                  player.id === currentTurn && styles.currentTurnHighlight,
                 ]}
               >
-                {card.rank} {suitSymbols[card.suit]}
-              </Text>
+                <Image source={avatars[player.avatar]} style={styles.avatarImage} />
+                <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
+                  {player.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.deckDiscardContainer}>
+            <TouchableOpacity
+              onPress={drawFromDeck}
+              style={[
+                styles.deckCard,
+                (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+              ]}
+              disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+            >
+              <Text style={styles.cardText}>Deck ({deck.length})</Text>
             </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </SafeAreaView>
-  );
+            <View style={styles.discardColumn}>
+              <TouchableOpacity
+                onPress={drawFromDiscard}
+                style={[
+                  styles.deckCard,
+                  (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
+                    styles.disabledDeck,
+                ]}
+                disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
+              >
+                {discardPile.length > 0 ? (
+                  <View style={styles.card}>
+                    <Text
+                      style={[
+                        styles.cardText,
+                        {
+                          color: ["hearts", "diamonds"].includes(
+                            discardPile[discardPile.length - 1].suit
+                          )
+                            ? "red"
+                            : "black",
+                        },
+                      ]}
+                    >
+                      {discardPile[discardPile.length - 1].rank}{" "}
+                      {suitSymbols[discardPile[discardPile.length - 1].suit]}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.cardText}>Empty Discard</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.discardButton,
+                  !canToggleDiscard && styles.disabledButton,
+                  discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                ]}
+                onPress={() => {
+                  if (!canToggleDiscard) {
+                    Alert.alert("You cannot toggle Discard mode right now!");
+                    return;
+                  }
+                  setDiscardMode(!discardMode);
+                  if (!discardMode) setRumpMode(false);
+                }}
+                disabled={!canToggleDiscard}
+              >
+                <Text
+                  style={[
+                    styles.discardButtonText,
+                    !canToggleDiscard && styles.disabledButton,
+                    discardMode ? { color: "#fff" } : { color: "#000" },
+                  ]}
+                >
+                  Discard
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.rumpButton,
+                  !canToggleRump && styles.disabledButton,
+                  rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                ]}
+                onPress={() => {
+                  if (!canToggleRump) {
+                    Alert.alert("You cannot toggle Rump mode right now!");
+                    return;
+                  }
+                  setRumpMode(!rumpMode);
+                  if (!rumpMode) setDiscardMode(false);
+                }}
+                disabled={!canToggleRump}
+              >
+                <Text
+                  style={[
+                    styles.rumpButtonText,
+                    !canToggleRump && styles.disabledButton,
+                    rumpMode ? { color: "#fff" } : { color: "#000" },
+                  ]}
+                >
+                  Rump
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.handContainer}>
+            {displayHand.map((card, index) => {
+              const comboStyle = highlightMapping[index]
+                ? { borderColor: highlightMapping[index], borderWidth: 3 }
+                : null;
+              return (
+                <TouchableOpacity
+                  key={`${card.rank}-${card.suit}-${index}`}
+                  style={[
+                    styles.card,
+                    responsiveCardSize,
+                    selectedCardIndex === index && styles.selectedCard,
+                    comboStyle,
+                  ]}
+                  onPress={() => handleCardPress(index)}
+                >
+                  <Text
+                    style={[
+                      styles.cardText,
+                      {
+                        color: ["hearts", "diamonds"].includes(card.suit)
+                          ? "red"
+                          : "black",
+                      },
+                    ]}
+                  >
+                    {card.rank} {suitSymbols[card.suit]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  } else {
+    // For native devices, if in landscape we use a two‑column layout,
+    // and in portrait we use the column view.
+    if (isLandscape) {
+      return (
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.landscapeContainer}>
+            <View style={styles.infoColumn}>
+              {isHost && roundStatus === "waiting" && (
+                <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
+                  <Text style={styles.startRoundText}>Start Round</Text>
+                </TouchableOpacity>
+              )}
+              <Text style={[styles.header, { color: colors.text }]}>
+                {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
+              </Text>
+              <View style={styles.avatarRow}>
+                {players.map((player) => (
+                  <View
+                    key={player.id}
+                    style={[
+                      styles.avatarContainer,
+                      responsiveAvatarContainer,
+                      player.id === currentTurn && styles.currentTurnHighlight,
+                    ]}
+                  >
+                    <Image source={avatars[player.avatar]} style={styles.avatarImage} />
+                    <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
+                      {player.name}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <View style={styles.deckDiscardContainer}>
+                <TouchableOpacity
+                  onPress={drawFromDeck}
+                  style={[
+                    styles.deckCard,
+                    (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                  ]}
+                  disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+                >
+                  <Text style={styles.cardText}>Deck ({deck.length})</Text>
+                </TouchableOpacity>
+                <View style={styles.discardColumn}>
+                  <TouchableOpacity
+                    onPress={drawFromDiscard}
+                    style={[
+                      styles.deckCard,
+                      (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
+                        styles.disabledDeck,
+                    ]}
+                    disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
+                  >
+                    {discardPile.length > 0 ? (
+                      <View style={styles.card}>
+                        <Text
+                          style={[
+                            styles.cardText,
+                            {
+                              color: ["hearts", "diamonds"].includes(
+                                discardPile[discardPile.length - 1].suit
+                              )
+                                ? "red"
+                                : "black",
+                            },
+                          ]}
+                        >
+                          {discardPile[discardPile.length - 1].rank}{" "}
+                          {suitSymbols[discardPile[discardPile.length - 1].suit]}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.cardText}>Empty Discard</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.discardButton,
+                      !canToggleDiscard && styles.disabledButton,
+                      discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                    ]}
+                    onPress={() => {
+                      if (!canToggleDiscard) {
+                        Alert.alert("You cannot toggle Discard mode right now!");
+                        return;
+                      }
+                      setDiscardMode(!discardMode);
+                      if (!discardMode) setRumpMode(false);
+                    }}
+                    disabled={!canToggleDiscard}
+                  >
+                    <Text
+                      style={[
+                        styles.discardButtonText,
+                        !canToggleDiscard && styles.disabledButton,
+                        discardMode ? { color: "#fff" } : { color: "#000" },
+                      ]}
+                    >
+                      Discard
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.rumpButton,
+                      !canToggleRump && styles.disabledButton,
+                      rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                    ]}
+                    onPress={() => {
+                      if (!canToggleRump) {
+                        Alert.alert("You cannot toggle Rump mode right now!");
+                        return;
+                      }
+                      setRumpMode(!rumpMode);
+                      if (!rumpMode) setDiscardMode(false);
+                    }}
+                    disabled={!canToggleRump}
+                  >
+                    <Text
+                      style={[
+                        styles.rumpButtonText,
+                        !canToggleRump && styles.disabledButton,
+                        rumpMode ? { color: "#fff" } : { color: "#000" },
+                      ]}
+                    >
+                      Rump
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+            <View style={styles.handColumn}>
+              <View style={styles.handContainer}>
+                {displayHand.map((card, index) => {
+                  const comboStyle = highlightMapping[index]
+                    ? { borderColor: highlightMapping[index], borderWidth: 3 }
+                    : null;
+                  return (
+                    <TouchableOpacity
+                      key={`${card.rank}-${card.suit}-${index}`}
+                      style={[
+                        styles.card,
+                        responsiveCardSize,
+                        selectedCardIndex === index && styles.selectedCard,
+                        comboStyle,
+                      ]}
+                      onPress={() => handleCardPress(index)}
+                    >
+                      <Text
+                        style={[
+                          styles.cardText,
+                          {
+                            color: ["hearts", "diamonds"].includes(card.suit)
+                              ? "red"
+                              : "black",
+                          },
+                        ]}
+                      >
+                        {card.rank} {suitSymbols[card.suit]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    } else {
+      // Native portrait view (similar to the web column layout)
+      return (
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.content}>
+            {isHost && roundStatus === "waiting" && (
+              <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
+                <Text style={styles.startRoundText}>Start Round</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={[styles.header, { color: colors.text }]}>
+              {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
+            </Text>
+            <View style={styles.avatarRow}>
+              {players.map((player) => (
+                <View
+                  key={player.id}
+                  style={[
+                    styles.avatarContainer,
+                    responsiveAvatarContainer,
+                    player.id === currentTurn && styles.currentTurnHighlight,
+                  ]}
+                >
+                  <Image source={avatars[player.avatar]} style={styles.avatarImage} />
+                  <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
+                    {player.name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.deckDiscardContainer}>
+              <TouchableOpacity
+                onPress={drawFromDeck}
+                style={[
+                  styles.deckCard,
+                  (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                ]}
+                disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+              >
+                <Text style={styles.cardText}>Deck ({deck.length})</Text>
+              </TouchableOpacity>
+              <View style={styles.discardColumn}>
+                <TouchableOpacity
+                  onPress={drawFromDiscard}
+                  style={[
+                    styles.deckCard,
+                    (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
+                      styles.disabledDeck,
+                  ]}
+                  disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
+                >
+                  {discardPile.length > 0 ? (
+                    <View style={styles.card}>
+                      <Text
+                        style={[
+                          styles.cardText,
+                          {
+                            color: ["hearts", "diamonds"].includes(
+                              discardPile[discardPile.length - 1].suit
+                            )
+                              ? "red"
+                              : "black",
+                          },
+                        ]}
+                      >
+                        {discardPile[discardPile.length - 1].rank}{" "}
+                        {suitSymbols[discardPile[discardPile.length - 1].suit]}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.cardText}>Empty Discard</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.discardButton,
+                    !canToggleDiscard && styles.disabledButton,
+                    discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                  ]}
+                  onPress={() => {
+                    if (!canToggleDiscard) {
+                      Alert.alert("You cannot toggle Discard mode right now!");
+                      return;
+                    }
+                    setDiscardMode(!discardMode);
+                    if (!discardMode) setRumpMode(false);
+                  }}
+                  disabled={!canToggleDiscard}
+                >
+                  <Text
+                    style={[
+                      styles.discardButtonText,
+                      !canToggleDiscard && styles.disabledButton,
+                      discardMode ? { color: "#fff" } : { color: "#000" },
+                    ]}
+                  >
+                    Discard
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.rumpButton,
+                    !canToggleRump && styles.disabledButton,
+                    rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                  ]}
+                  onPress={() => {
+                    if (!canToggleRump) {
+                      Alert.alert("You cannot toggle Rump mode right now!");
+                      return;
+                    }
+                    setRumpMode(!rumpMode);
+                    if (!rumpMode) setDiscardMode(false);
+                  }}
+                  disabled={!canToggleRump}
+                >
+                  <Text
+                    style={[
+                      styles.rumpButtonText,
+                      !canToggleRump && styles.disabledButton,
+                      rumpMode ? { color: "#fff" } : { color: "#000" },
+                    ]}
+                  >
+                    Rump
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.handContainer}>
+              {displayHand.map((card, index) => {
+                const comboStyle = highlightMapping[index]
+                  ? { borderColor: highlightMapping[index], borderWidth: 3 }
+                  : null;
+                return (
+                  <TouchableOpacity
+                    key={`${card.rank}-${card.suit}-${index}`}
+                    style={[
+                      styles.card,
+                      responsiveCardSize,
+                      selectedCardIndex === index && styles.selectedCard,
+                      comboStyle,
+                    ]}
+                    onPress={() => handleCardPress(index)}
+                  >
+                    <Text
+                      style={[
+                        styles.cardText,
+                        {
+                          color: ["hearts", "diamonds"].includes(card.suit)
+                            ? "red"
+                            : "black",
+                        },
+                      ]}
+                    >
+                      {card.rank} {suitSymbols[card.suit]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
+  }
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
+    padding: 10,
+  },
+  // Portrait / Web column layout
+  content: {
+    flex: 1,
+    justifyContent: "space-evenly",
+  },
+  // Landscape layout for native devices: two columns
+  landscapeContainer: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  infoColumn: {
+    flex: 1,
+    justifyContent: "space-evenly",
+    paddingRight: 5,
+  },
+  handColumn: {
+    flex: 1,
     justifyContent: "center",
-    padding: 20,
+    alignItems: "center",
+    paddingLeft: 5,
   },
   startRoundButton: {
     padding: 10,
-    marginBottom: 10,
     borderRadius: 3,
     backgroundColor: "#c3c3c3",
-    marginVertical: 10,
+    alignSelf: "center",
     borderWidth: 4,
     borderLeftColor: "#fff",
     borderTopColor: "#fff",
     borderRightColor: "#404040",
     borderBottomColor: "#404040",
+    marginBottom: 10,
   },
   startRoundText: {
     color: "#fff",
@@ -530,17 +903,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: "PressStart2P",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 10,
   },
   avatarRow: {
     flexDirection: "row",
     justifyContent: "center",
-    width: "100%",
-    marginBottom: 20,
+    marginBottom: 10,
   },
   avatarContainer: {
     alignItems: "center",
-    width: 100,
     padding: 5,
     backgroundColor: "#c3c3c3",
     borderWidth: 4,
@@ -548,13 +919,14 @@ const styles = StyleSheet.create({
     borderTopColor: "#fff",
     borderRightColor: "#404040",
     borderBottomColor: "#404040",
+    marginHorizontal: 5,
   },
   currentTurnHighlight: {
-    backgroundColor: "#fffc57",
+    backgroundColor: "#9e9572",
   },
   avatarImage: {
-    width: 80,
-    height: 80,
+    width: "100%",
+    height: "80%",
     borderWidth: 4,
     borderTopColor: "#404040",
     borderLeftColor: "#404040",
@@ -568,17 +940,16 @@ const styles = StyleSheet.create({
     color: "#000",
   },
   currentTurnAvatarName: {
-    color: "Yellow",
+    color: "yellow",
   },
   deckDiscardContainer: {
     flexDirection: "row",
     justifyContent: "space-evenly",
-    width: "100%",
-    marginVertical: 20,
+    marginVertical: 10,
   },
   deckCard: {
-    width: 100,
-    height: 140,
+    width: 80,
+    height: 110,
     backgroundColor: "#444",
     borderRadius: 5,
     alignItems: "center",
@@ -591,7 +962,6 @@ const styles = StyleSheet.create({
   },
   discardColumn: {
     alignItems: "center",
-    justifyContent: "center",
   },
   discardButton: {
     padding: 10,
@@ -629,23 +999,19 @@ const styles = StyleSheet.create({
   },
   handContainer: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 10,
+    padding: 10,
     backgroundColor: "#c3c3c3",
     borderWidth: 4,
     borderLeftColor: "#fff",
     borderTopColor: "#fff",
     borderRightColor: "#404040",
     borderBottomColor: "#404040",
-    padding: 10,
-    marginVertical: 10,
     borderRadius: 3,
-    minHeight: 160,
-    minWidth: "100%",
   },
   card: {
-    height: 140,
-    width: 100,
     backgroundColor: "#fff",
     borderColor: "#000",
     borderWidth: 1,
@@ -653,7 +1019,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 5,
-    marginHorizontal: 5,
+    margin: 5,
   },
   selectedCard: {
     backgroundColor: "#ffffd0",
@@ -664,6 +1030,5 @@ const styles = StyleSheet.create({
     fontFamily: "PressStart2P",
     fontSize: 12,
     textAlign: "center",
-    color: "#000",
   },
 });
