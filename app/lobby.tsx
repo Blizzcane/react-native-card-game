@@ -220,7 +220,7 @@ export default function LobbyScreen() {
               data={availableRooms}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
-                console.log("Item players:", item.players);
+                 
                 return (
                   <TouchableOpacity style={styles.roomItem} onPress={() => joinGame(item.id)}>
                     <View style={styles.lobbyAvatarGrid}>
