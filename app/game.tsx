@@ -59,6 +59,8 @@ export default function GameScreen() {
   const [hasDrawnCard, setHasDrawnCard] = useState(false);
   const [selectedCardIndex, setSelectedCardIndex] = useState(null);
   const [discardMode, setDiscardMode] = useState(false);
+  // New state for Rump mode toggle
+  const [rumpMode, setRumpMode] = useState(false);
   const scrollViewRef = useRef(null);
 
   useEffect(() => {
@@ -247,6 +249,11 @@ export default function GameScreen() {
     }
   };
 
+  // Conditions: both buttons are enabled only when it's the player's turn and they have drawn a card.
+  // Additionally, if one mode is active, the other button is disabled.
+  const canToggleDiscard = playerId === currentTurn && hasDrawnCard && !rumpMode;
+  const canToggleRump = playerId === currentTurn && hasDrawnCard && !discardMode;
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {isHost && roundStatus === "waiting" && (
@@ -319,20 +326,52 @@ export default function GameScreen() {
           <TouchableOpacity
             style={[
               styles.discardButton,
-              !(playerId === currentTurn && hasDrawnCard) && styles.disabledButton,
+              !canToggleDiscard && styles.disabledButton,
               discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" }
             ]}
             onPress={() => {
-              if (playerId !== currentTurn || !hasDrawnCard) {
-                Alert.alert("You must draw a card before discarding or it's not your turn!");
+              if (!canToggleDiscard) {
+                Alert.alert("You cannot toggle Discard mode right now!");
                 return;
               }
-              // Toggle discard mode on click.
+              // Toggle discard mode and ensure rump mode is off.
               setDiscardMode(!discardMode);
+              if (!discardMode) setRumpMode(false);
             }}
-            disabled={!(playerId === currentTurn && hasDrawnCard)}
+            disabled={!canToggleDiscard}
           >
-            <Text style={styles.discardButtonText}>Discard Card</Text>
+            <Text style={[
+              styles.discardButtonText,
+              !canToggleDiscard && styles.disabledButton,
+              discardMode ? { color: "#fff" } : { color: "#000" }
+            ]}>
+              Discard
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.rumpButton,
+              !canToggleRump && styles.disabledButton,
+              rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" }
+            ]}
+            onPress={() => {
+              if (!canToggleRump) {
+                Alert.alert("You cannot toggle Rump mode right now!");
+                return;
+              }
+              // Toggle rump mode and ensure discard mode is off.
+              setRumpMode(!rumpMode);
+              if (!rumpMode) setDiscardMode(false);
+            }}
+            disabled={!canToggleRump}
+          >
+            <Text style={[
+              styles.rumpButtonText,
+              !canToggleRump && styles.disabledButton,
+              rumpMode ? { color: "#fff" } : { color: "#000" }
+            ]}>
+              Rump
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -463,18 +502,34 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderRadius: 3,
     borderWidth: 4,
-    borderLeftColor: "#f00",
-    borderTopColor: "#f00",
-    borderRightColor: "#800",
-    borderBottomColor: "#800",
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
   },
   discardButtonText: {
-    color: "#fff",
+    color: "#000",
     fontFamily: "PressStart2P",
     fontSize: 12
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  rumpButton: {
+    padding: 10,
+    marginTop: 10,
+    borderRadius: 3,
+    borderWidth: 4,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  },
+  rumpButtonText: {
+    color: "#000",
+    fontFamily: "PressStart2P",
+    fontSize: 12,
+    textAlign: "center"
   },
   handContainer: {
     flexDirection: "row",
