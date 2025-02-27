@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Alert,
   Image,
-  useWindowDimensions,
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -102,50 +101,14 @@ function computeGroups(hand) {
 // Preset palette of unique colors.
 const groupColors = ["#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3"];
 
-// A helper to mimic media queries – returns sizes based on width (in pixels).
-function getResponsiveSizes(width) {
-  if (width < 600) {
-    // Small screen
-    return {
-      card: { width: 60, height: 80 },
-      avatar: { width: 80, height: 90 },
-    };
-  } else if (width < 1024) {
-    // Medium screen
-    return {
-      card: { width: 70, height: 90 },
-      avatar: { width: 90, height: 110 },
-    };
-  } else {
-    // Large screen
-    return {
-      card: { width: 80, height: 110 },
-      avatar: { width: 100, height: 120 },
-    };
-  }
-}
-
 export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
-  const { width, height } = useWindowDimensions();
-  const isWeb = Platform.OS === "web";
-  const isLandscape = width > height;
 
-  // For web, we want column view with responsive sizes;
-  // for native, we use orientation-based sizes.
-  const responsiveSizes = getResponsiveSizes(width);
-  const responsiveCardSize = isWeb
-    ? responsiveSizes.card
-    : isLandscape
-    ? { width: 60, height: 80 }
-    : { width: 80, height: 110 };
-  const responsiveAvatarContainer = isWeb
-    ? responsiveSizes.avatar
-    : isLandscape
-    ? { width: 80, height: 90 }
-    : { width: 100, height: 120 };
+  // Use fixed sizes instead of responsive values.
+  const cardSize = { width: 80, height: 110 };
+  const avatarContainerSize = { width: 100, height: 120 };
 
   const [deck, setDeck] = useState([]);
   const [discardPile, setDiscardPile] = useState([]);
@@ -358,529 +321,176 @@ export default function GameScreen() {
   const canToggleDiscard = playerId === currentTurn && hasDrawnCard && !rumpMode;
   const canToggleRump = playerId === currentTurn && hasDrawnCard && !discardMode;
 
-  // Now decide on layout based on platform.
-  // On web, we keep a column layout with our responsive sizes.
-  if (isWeb) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.content}>
-          {isHost && roundStatus === "waiting" && (
-            <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
-              <Text style={styles.startRoundText}>Start Round</Text>
-            </TouchableOpacity>
-          )}
-          <Text style={[styles.header, { color: colors.text }]}>
-            {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
-          </Text>
-          <View style={styles.avatarRow}>
-            {players.map((player) => (
-              <View
-                key={player.id}
-                style={[
-                  styles.avatarContainer,
-                  responsiveAvatarContainer,
-                  player.id === currentTurn && styles.currentTurnHighlight,
-                ]}
-              >
-                <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-                <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
-                  {player.name}
-                </Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.deckDiscardContainer}>
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.content}>
+        {isHost && roundStatus === "waiting" && (
+          <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
+            <Text style={styles.startRoundText}>Start Round</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={[styles.header, { color: colors.text }]}>
+          {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
+        </Text>
+        <View style={styles.avatarRow}>
+          {players.map((player) => (
+            <View
+              key={player.id}
+              style={[
+                styles.avatarContainer,
+                avatarContainerSize,
+                player.id === currentTurn && styles.currentTurnHighlight,
+              ]}
+            >
+              <Image source={avatars[player.avatar]} style={styles.avatarImage} />
+              <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
+                {player.name}
+              </Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.deckDiscardContainer}>
+          <TouchableOpacity
+            onPress={drawFromDeck}
+            style={[
+              styles.deckCard,
+              (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+            ]}
+            disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+          >
+            <Text style={styles.cardText}>Deck ({deck.length})</Text>
+          </TouchableOpacity>
+          <View style={styles.discardColumn}>
             <TouchableOpacity
-              onPress={drawFromDeck}
+              onPress={drawFromDiscard}
               style={[
                 styles.deckCard,
-                (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
+                  styles.disabledDeck,
               ]}
-              disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+              disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
             >
-              <Text style={styles.cardText}>Deck ({deck.length})</Text>
-            </TouchableOpacity>
-            <View style={styles.discardColumn}>
-              <TouchableOpacity
-                onPress={drawFromDiscard}
-                style={[
-                  styles.deckCard,
-                  (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
-                    styles.disabledDeck,
-                ]}
-                disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
-              >
-                {discardPile.length > 0 ? (
-                  <View style={styles.card}>
-                    <Text
-                      style={[
-                        styles.cardText,
-                        {
-                          color: ["hearts", "diamonds"].includes(
-                            discardPile[discardPile.length - 1].suit
-                          )
-                            ? "red"
-                            : "black",
-                        },
-                      ]}
-                    >
-                      {discardPile[discardPile.length - 1].rank}{" "}
-                      {suitSymbols[discardPile[discardPile.length - 1].suit]}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.cardText}>Empty Discard</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.discardButton,
-                  !canToggleDiscard && styles.disabledButton,
-                  discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-                ]}
-                onPress={() => {
-                  if (!canToggleDiscard) {
-                    Alert.alert("You cannot toggle Discard mode right now!");
-                    return;
-                  }
-                  setDiscardMode(!discardMode);
-                  if (!discardMode) setRumpMode(false);
-                }}
-                disabled={!canToggleDiscard}
-              >
-                <Text
-                  style={[
-                    styles.discardButtonText,
-                    !canToggleDiscard && styles.disabledButton,
-                    discardMode ? { color: "#fff" } : { color: "#000" },
-                  ]}
-                >
-                  Discard
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.rumpButton,
-                  !canToggleRump && styles.disabledButton,
-                  rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-                ]}
-                onPress={() => {
-                  if (!canToggleRump) {
-                    Alert.alert("You cannot toggle Rump mode right now!");
-                    return;
-                  }
-                  setRumpMode(!rumpMode);
-                  if (!rumpMode) setDiscardMode(false);
-                }}
-                disabled={!canToggleRump}
-              >
-                <Text
-                  style={[
-                    styles.rumpButtonText,
-                    !canToggleRump && styles.disabledButton,
-                    rumpMode ? { color: "#fff" } : { color: "#000" },
-                  ]}
-                >
-                  Rump
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.handContainer}>
-            {displayHand.map((card, index) => {
-              const comboStyle = highlightMapping[index]
-                ? { borderColor: highlightMapping[index], borderWidth: 3 }
-                : null;
-              return (
-                <TouchableOpacity
-                  key={`${card.rank}-${card.suit}-${index}`}
-                  style={[
-                    styles.card,
-                    responsiveCardSize,
-                    selectedCardIndex === index && styles.selectedCard,
-                    comboStyle,
-                  ]}
-                  onPress={() => handleCardPress(index)}
-                >
+              {discardPile.length > 0 ? (
+                <View style={styles.card}>
                   <Text
                     style={[
                       styles.cardText,
                       {
-                        color: ["hearts", "diamonds"].includes(card.suit)
+                        color: ["hearts", "diamonds"].includes(
+                          discardPile[discardPile.length - 1].suit
+                        )
                           ? "red"
                           : "black",
                       },
                     ]}
                   >
-                    {card.rank} {suitSymbols[card.suit]}
+                    {discardPile[discardPile.length - 1].rank}{" "}
+                    {suitSymbols[discardPile[discardPile.length - 1].suit]}
                   </Text>
-                </TouchableOpacity>
-              );
-            })}
+                </View>
+              ) : (
+                <Text style={styles.cardText}>Empty Discard</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.discardButton,
+                !canToggleDiscard && styles.disabledButton,
+                discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+              ]}
+              onPress={() => {
+                if (!canToggleDiscard) {
+                  Alert.alert("You cannot toggle Discard mode right now!");
+                  return;
+                }
+                setDiscardMode(!discardMode);
+                if (!discardMode) setRumpMode(false);
+              }}
+              disabled={!canToggleDiscard}
+            >
+              <Text
+                style={[
+                  styles.discardButtonText,
+                  !canToggleDiscard && styles.disabledButton,
+                  discardMode ? { color: "#fff" } : { color: "#000" },
+                ]}
+              >
+                Discard
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.rumpButton,
+                !canToggleRump && styles.disabledButton,
+                rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+              ]}
+              onPress={() => {
+                if (!canToggleRump) {
+                  Alert.alert("You cannot toggle Rump mode right now!");
+                  return;
+                }
+                setRumpMode(!rumpMode);
+                if (!rumpMode) setDiscardMode(false);
+              }}
+              disabled={!canToggleRump}
+            >
+              <Text
+                style={[
+                  styles.rumpButtonText,
+                  !canToggleRump && styles.disabledButton,
+                  rumpMode ? { color: "#fff" } : { color: "#000" },
+                ]}
+              >
+                Rump
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </SafeAreaView>
-    );
-  } else {
-    // For native devices, if in landscape we use a two‑column layout,
-    // and in portrait we use the column view.
-    if (isLandscape) {
-      return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-          <View style={styles.landscapeContainer}>
-            <View style={styles.infoColumn}>
-              {isHost && roundStatus === "waiting" && (
-                <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
-                  <Text style={styles.startRoundText}>Start Round</Text>
-                </TouchableOpacity>
-              )}
-              <Text style={[styles.header, { color: colors.text }]}>
-                {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
-              </Text>
-              <View style={styles.avatarRow}>
-                {players.map((player) => (
-                  <View
-                    key={player.id}
-                    style={[
-                      styles.avatarContainer,
-                      responsiveAvatarContainer,
-                      player.id === currentTurn && styles.currentTurnHighlight,
-                    ]}
-                  >
-                    <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-                    <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
-                      {player.name}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-              <View style={styles.deckDiscardContainer}>
-                <TouchableOpacity
-                  onPress={drawFromDeck}
-                  style={[
-                    styles.deckCard,
-                    (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
-                  ]}
-                  disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
-                >
-                  <Text style={styles.cardText}>Deck ({deck.length})</Text>
-                </TouchableOpacity>
-                <View style={styles.discardColumn}>
-                  <TouchableOpacity
-                    onPress={drawFromDiscard}
-                    style={[
-                      styles.deckCard,
-                      (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
-                        styles.disabledDeck,
-                    ]}
-                    disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
-                  >
-                    {discardPile.length > 0 ? (
-                      <View style={styles.card}>
-                        <Text
-                          style={[
-                            styles.cardText,
-                            {
-                              color: ["hearts", "diamonds"].includes(
-                                discardPile[discardPile.length - 1].suit
-                              )
-                                ? "red"
-                                : "black",
-                            },
-                          ]}
-                        >
-                          {discardPile[discardPile.length - 1].rank}{" "}
-                          {suitSymbols[discardPile[discardPile.length - 1].suit]}
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.cardText}>Empty Discard</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.discardButton,
-                      !canToggleDiscard && styles.disabledButton,
-                      discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-                    ]}
-                    onPress={() => {
-                      if (!canToggleDiscard) {
-                        Alert.alert("You cannot toggle Discard mode right now!");
-                        return;
-                      }
-                      setDiscardMode(!discardMode);
-                      if (!discardMode) setRumpMode(false);
-                    }}
-                    disabled={!canToggleDiscard}
-                  >
-                    <Text
-                      style={[
-                        styles.discardButtonText,
-                        !canToggleDiscard && styles.disabledButton,
-                        discardMode ? { color: "#fff" } : { color: "#000" },
-                      ]}
-                    >
-                      Discard
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.rumpButton,
-                      !canToggleRump && styles.disabledButton,
-                      rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-                    ]}
-                    onPress={() => {
-                      if (!canToggleRump) {
-                        Alert.alert("You cannot toggle Rump mode right now!");
-                        return;
-                      }
-                      setRumpMode(!rumpMode);
-                      if (!rumpMode) setDiscardMode(false);
-                    }}
-                    disabled={!canToggleRump}
-                  >
-                    <Text
-                      style={[
-                        styles.rumpButtonText,
-                        !canToggleRump && styles.disabledButton,
-                        rumpMode ? { color: "#fff" } : { color: "#000" },
-                      ]}
-                    >
-                      Rump
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-            <View style={styles.handColumn}>
-              <View style={styles.handContainer}>
-                {displayHand.map((card, index) => {
-                  const comboStyle = highlightMapping[index]
-                    ? { borderColor: highlightMapping[index], borderWidth: 3 }
-                    : null;
-                  return (
-                    <TouchableOpacity
-                      key={`${card.rank}-${card.suit}-${index}`}
-                      style={[
-                        styles.card,
-                        responsiveCardSize,
-                        selectedCardIndex === index && styles.selectedCard,
-                        comboStyle,
-                      ]}
-                      onPress={() => handleCardPress(index)}
-                    >
-                      <Text
-                        style={[
-                          styles.cardText,
-                          {
-                            color: ["hearts", "diamonds"].includes(card.suit)
-                              ? "red"
-                              : "black",
-                          },
-                        ]}
-                      >
-                        {card.rank} {suitSymbols[card.suit]}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-        </SafeAreaView>
-      );
-    } else {
-      // Native portrait view (similar to the web column layout)
-      return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-          <View style={styles.content}>
-            {isHost && roundStatus === "waiting" && (
-              <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
-                <Text style={styles.startRoundText}>Start Round</Text>
-              </TouchableOpacity>
-            )}
-            <Text style={[styles.header, { color: colors.text }]}>
-              {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
-            </Text>
-            <View style={styles.avatarRow}>
-              {players.map((player) => (
-                <View
-                  key={player.id}
-                  style={[
-                    styles.avatarContainer,
-                    responsiveAvatarContainer,
-                    player.id === currentTurn && styles.currentTurnHighlight,
-                  ]}
-                >
-                  <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-                  <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
-                    {player.name}
-                  </Text>
-                </View>
-              ))}
-            </View>
-            <View style={styles.deckDiscardContainer}>
+        <View style={styles.handContainer}>
+          {displayHand.map((card, index) => {
+            const comboStyle = highlightMapping[index]
+              ? { borderColor: highlightMapping[index], borderWidth: 3 }
+              : null;
+            return (
               <TouchableOpacity
-                onPress={drawFromDeck}
+                key={`${card.rank}-${card.suit}-${index}`}
                 style={[
-                  styles.deckCard,
-                  (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                  styles.card,
+                  cardSize,
+                  selectedCardIndex === index && styles.selectedCard,
+                  comboStyle,
                 ]}
-                disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+                onPress={() => handleCardPress(index)}
               >
-                <Text style={styles.cardText}>Deck ({deck.length})</Text>
+                <Text
+                  style={[
+                    styles.cardText,
+                    {
+                      color: ["hearts", "diamonds"].includes(card.suit)
+                        ? "red"
+                        : "black",
+                    },
+                  ]}
+                >
+                  {card.rank} {suitSymbols[card.suit]}
+                </Text>
               </TouchableOpacity>
-              <View style={styles.discardColumn}>
-                <TouchableOpacity
-                  onPress={drawFromDiscard}
-                  style={[
-                    styles.deckCard,
-                    (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
-                      styles.disabledDeck,
-                  ]}
-                  disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
-                >
-                  {discardPile.length > 0 ? (
-                    <View style={styles.card}>
-                      <Text
-                        style={[
-                          styles.cardText,
-                          {
-                            color: ["hearts", "diamonds"].includes(
-                              discardPile[discardPile.length - 1].suit
-                            )
-                              ? "red"
-                              : "black",
-                          },
-                        ]}
-                      >
-                        {discardPile[discardPile.length - 1].rank}{" "}
-                        {suitSymbols[discardPile[discardPile.length - 1].suit]}
-                      </Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.cardText}>Empty Discard</Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.discardButton,
-                    !canToggleDiscard && styles.disabledButton,
-                    discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-                  ]}
-                  onPress={() => {
-                    if (!canToggleDiscard) {
-                      Alert.alert("You cannot toggle Discard mode right now!");
-                      return;
-                    }
-                    setDiscardMode(!discardMode);
-                    if (!discardMode) setRumpMode(false);
-                  }}
-                  disabled={!canToggleDiscard}
-                >
-                  <Text
-                    style={[
-                      styles.discardButtonText,
-                      !canToggleDiscard && styles.disabledButton,
-                      discardMode ? { color: "#fff" } : { color: "#000" },
-                    ]}
-                  >
-                    Discard
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.rumpButton,
-                    !canToggleRump && styles.disabledButton,
-                    rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-                  ]}
-                  onPress={() => {
-                    if (!canToggleRump) {
-                      Alert.alert("You cannot toggle Rump mode right now!");
-                      return;
-                    }
-                    setRumpMode(!rumpMode);
-                    if (!rumpMode) setDiscardMode(false);
-                  }}
-                  disabled={!canToggleRump}
-                >
-                  <Text
-                    style={[
-                      styles.rumpButtonText,
-                      !canToggleRump && styles.disabledButton,
-                      rumpMode ? { color: "#fff" } : { color: "#000" },
-                    ]}
-                  >
-                    Rump
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            <View style={styles.handContainer}>
-              {displayHand.map((card, index) => {
-                const comboStyle = highlightMapping[index]
-                  ? { borderColor: highlightMapping[index], borderWidth: 3 }
-                  : null;
-                return (
-                  <TouchableOpacity
-                    key={`${card.rank}-${card.suit}-${index}`}
-                    style={[
-                      styles.card,
-                      responsiveCardSize,
-                      selectedCardIndex === index && styles.selectedCard,
-                      comboStyle,
-                    ]}
-                    onPress={() => handleCardPress(index)}
-                  >
-                    <Text
-                      style={[
-                        styles.cardText,
-                        {
-                          color: ["hearts", "diamonds"].includes(card.suit)
-                            ? "red"
-                            : "black",
-                        },
-                      ]}
-                    >
-                      {card.rank} {suitSymbols[card.suit]}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        </SafeAreaView>
-      );
-    }
-  }
+            );
+          })}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 10,
+    padding: 10, 
   },
-  // Portrait / Web column layout
   content: {
     flex: 1,
     justifyContent: "space-evenly",
-  },
-  // Landscape layout for native devices: two columns
-  landscapeContainer: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  infoColumn: {
-    flex: 1,
-    justifyContent: "space-evenly",
-    paddingRight: 5,
-  },
-  handColumn: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingLeft: 5,
   },
   startRoundButton: {
     padding: 10,
