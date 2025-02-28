@@ -17,21 +17,33 @@ import avatars from "@/utils/avatarLoader";
 
 SplashScreen.preventAutoHideAsync();
 
+// Constants
 const suitSymbols = { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" };
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const MAX_CARDS = 10;
 const groupColors = ["#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3"];
 
-// Helper functions for deck and cards
+/* --- Helper Functions --- */
 
+// For grouping runs, an Ace can be 1 or 11.
 function getCardValues(card) {
   if (card.rank === "A") return [1, 11];
   if (card.rank === "J") return [12];
   if (card.rank === "Q") return [13];
   if (card.rank === "K") return [14];
-  return [parseInt(card.rank)];
+  return [parseInt(card.rank, 10)];
 }
+
+// For leftover scoring, an Ace always counts as 1.
+function getCardScore(card) {
+  if (card.rank === "A") return 1;
+  if (card.rank === "J") return 12;
+  if (card.rank === "Q") return 13;
+  if (card.rank === "K") return 14;
+  return parseInt(card.rank, 10);
+}
+
 
 function generateDeck() {
   const deck = [];
@@ -52,6 +64,7 @@ function shuffleArray(array) {
   return arr;
 }
 
+// Returns true if card2 is consecutive to card1 considering Ace as 1 or 11.
 function isConsecutive(card1, card2) {
   if (card1.suit !== card2.suit) return false;
   const vals1 = getCardValues(card1);
@@ -64,10 +77,66 @@ function isConsecutive(card1, card2) {
   return false;
 }
 
-// computeGroups returns candidate groups (sets or runs) with a minimum of 3 cards.
+// Determines if the cards form a valid group (set or run).
+function isValidGroup(cards) {
+  if (cards.length < 3) return false;
+  // Check set: all same rank.
+  const rank = cards[0].rank;
+  if (cards.every(c => c.rank === rank)) return true;
+  // Check run: same suit and consecutive.
+  const suit = cards[0].suit;
+  if (!cards.every(c => c.suit === suit)) return false;
+  for (let i = 0; i < cards.length - 1; i++) {
+    if (!isConsecutive(cards[i], cards[i + 1])) return false;
+  }
+  return true;
+}
+
+// Recursively compute the minimum leftover score by partitioning the hand
+// into valid groups. Cards not grouped add their score.
+function computeOptimalLeftoverScore(hand) {
+  const n = hand.length;
+  const memo = {};
+  function helper(start) {
+    if (start >= n) return 0;
+    if (memo[start] !== undefined) return memo[start];
+    // Option 1: leave the card at 'start' ungrouped.
+    let best = getCardScore(hand[start]) + helper(start + 1);
+    // Option 2: try forming a valid group starting at 'start'.
+    for (let L = 3; L <= n - start; L++) {
+      const group = hand.slice(start, start + L);
+      if (isValidGroup(group)) {
+        best = Math.min(best, helper(start + L));
+      }
+    }
+    memo[start] = best;
+    return best;
+  }
+  return helper(0);
+}
+
+function computeRoundScore(hand) {
+  return computeOptimalLeftoverScore(hand);
+}
+
+// For rump mode validation: from a 10-card hand, check if there is a card to discard
+// such that the remaining 9 cards have an optimal leftover score of 0.
+function isValidRumpUsingComputedGroups(hand) {
+  if (hand.length !== 10) return false;
+  for (let i = 0; i < hand.length; i++) {
+    const candidateHand = hand.filter((_, idx) => idx !== i);
+    if (computeOptimalLeftoverScore(candidateHand) === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// computeGroups: Used to highlight contiguous groups in the UI.
 function computeGroups(hand) {
   const groups = [];
   let i = 0;
+  // Find sets.
   while (i < hand.length) {
     let j = i + 1;
     while (j < hand.length && hand[j].rank === hand[i].rank) {
@@ -81,6 +150,7 @@ function computeGroups(hand) {
     }
     i = j;
   }
+  // Find runs.
   i = 0;
   while (i < hand.length) {
     const groupIndices = [i];
@@ -96,32 +166,14 @@ function computeGroups(hand) {
   return groups;
 }
 
-// Checks if a 10-card hand can become a valid rump by discarding one card.
-// A valid rump is one where the remaining 9 cards can be completely grouped.
-function isValidRumpUsingComputedGroups(hand) {
-  if (hand.length !== 10) return false;
-  for (let i = 0; i < hand.length; i++) {
-    const candidateHand = hand.filter((_, idx) => idx !== i);
-    const groups = computeGroups(candidateHand);
-    const covered = new Array(candidateHand.length).fill(false);
-    groups.forEach((group) => {
-      group.indices.forEach((idx) => {
-        covered[idx] = true;
-      });
-    });
-    if (covered.every((v) => v === true)) {
-      return true;
-    }
-  }
-  return false;
-}
+/* --- GameScreen Component --- */
 
 export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
 
-  // Fixed sizes for cards and avatars.
+  // Fixed sizes.
   const cardSize = { width: 80, height: 110 };
   const avatarContainerSize = { width: 100, height: 120 };
 
@@ -129,6 +181,7 @@ export default function GameScreen() {
   const [discardPile, setDiscardPile] = useState([]);
   const [playerHand, setPlayerHand] = useState([]);
   const [displayHand, setDisplayHand] = useState([]);
+  const [allHands, setAllHands] = useState({});
   const [currentRound, setCurrentRound] = useState(1);
   const [roundStatus, setRoundStatus] = useState("waiting");
   const [players, setPlayers] = useState([]);
@@ -138,12 +191,13 @@ export default function GameScreen() {
   const [selectedCardIndex, setSelectedCardIndex] = useState(null);
   const [discardMode, setDiscardMode] = useState(false);
   const [rumpMode, setRumpMode] = useState(false);
-  
-  // New state to track dealer and starting turn.
+  const [scoresUpdated, setScoresUpdated] = useState(false);
+
+  // Dealer and turn tracking.
   const [dealerIndex, setDealerIndex] = useState(0);
   const [startingPlayerIndex, setStartingPlayerIndex] = useState(0);
 
-  // A round is active only when its status is "started"
+  // A round is active only when status === "started"
   const isRoundActive = roundStatus === "started";
 
   useEffect(() => {
@@ -156,11 +210,13 @@ export default function GameScreen() {
         setCurrentRound(data.currentRound || 0);
         if (data.deck) setDeck(data.deck);
         if (data.discardPile) setDiscardPile(data.discardPile);
-        if (data.hands && data.hands[playerId]) {
-          const newHand = data.hands[playerId];
-          setPlayerHand(newHand);
-          // Immediately update displayHand when hand changes.
-          setDisplayHand(newHand);
+        if (data.hands) {
+          setAllHands(data.hands);
+          if (data.hands[playerId]) {
+            const newHand = data.hands[playerId];
+            setPlayerHand(newHand);
+            setDisplayHand(newHand);
+          }
         }
         if (data.hostId === playerId) {
           setIsHost(true);
@@ -171,7 +227,6 @@ export default function GameScreen() {
             setHasDrawnCard(false);
           }
         }
-        // Update dealer and starting player if available.
         if (typeof data.dealerIndex === "number") setDealerIndex(data.dealerIndex);
         if (typeof data.startingPlayerIndex === "number") setStartingPlayerIndex(data.startingPlayerIndex);
         setRoundStatus(data.roundStatus || "waiting");
@@ -182,6 +237,30 @@ export default function GameScreen() {
     });
     return () => unsubscribe();
   }, [roomId, currentTurn, playerId, router]);
+
+  // When a round ends (roundStatus becomes "waiting") and if host, update scores
+  // and log each player's hand and card values.
+  useEffect(() => {
+    if (roundStatus === "waiting" && !scoresUpdated && isHost) {
+      console.log("Round ended. Logging each player's hand and card values:");
+      players.forEach((player) => {
+        const hand = allHands[player.id] || [];
+        console.log(`Player ${player.name}'s hand:`);
+        hand.forEach((card, idx) => {
+          console.log(`  Card ${idx}: ${card.rank} ${suitSymbols[card.suit]}, Value: ${getCardScore(card)}`);
+        });
+      });
+      const updatedPlayers = players.map((player) => {
+        const hand = allHands[player.id] || [];
+        const roundScore = computeRoundScore(hand);
+        const prevScore = player.score || 0;
+        return { ...player, score: prevScore + roundScore };
+      });
+      updateDoc(doc(db, "games", roomId), { players: updatedPlayers })
+        .then(() => setScoresUpdated(true))
+        .catch((err) => console.error("Failed to update scores", err));
+    }
+  }, [roundStatus, scoresUpdated, isHost, players, allHands, roomId]);
 
   const initializeRound = async () => {
     if (!isHost) return;
@@ -194,15 +273,12 @@ export default function GameScreen() {
       setRoundStatus("gameOver");
       return;
     }
-    // Rotate dealer: newDealerIndex is previous dealerIndex + 1 (mod players.length)
+    // Rotate dealer and starting turn.
     const currentDealerIndex = dealerIndex;
     const newDealerIndex = (currentDealerIndex + 1) % players.length;
-    // For many card games, the player after the dealer goes first.
     const newStartingIndex = (newDealerIndex + 1) % players.length;
-
     const newDeck = shuffleArray(generateDeck());
     const hands = {};
-    // Deal 9 cards to each player.
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
@@ -216,13 +292,12 @@ export default function GameScreen() {
       startingPlayerIndex: newStartingIndex,
       currentTurn: players[newStartingIndex]?.id,
     });
-    // Immediately update hand for the current player.
     const myHand = hands[playerId] || [];
     setPlayerHand(myHand);
     setDisplayHand(myHand);
     setRoundStatus("started");
     setHasDrawnCard(false);
-    // Update local dealer and starting turn indices.
+    setScoresUpdated(false);
     setDealerIndex(newDealerIndex);
     setStartingPlayerIndex(newStartingIndex);
   };
@@ -239,21 +314,15 @@ export default function GameScreen() {
       return;
     }
     if (source.length === 0) {
-      Alert.alert(
-        sourceKey === "deck" ? "The deck is empty!" : "The discard pile is empty!"
-      );
+      Alert.alert(sourceKey === "deck" ? "The deck is empty!" : "The discard pile is empty!");
       return;
     }
     if (playerHand.length >= MAX_CARDS) {
-      Alert.alert(
-        `You can only have ${MAX_CARDS} cards in your hand. Please discard first.`
-      );
+      Alert.alert(`You can only have ${MAX_CARDS} cards in your hand. Please discard first.`);
       return;
     }
-    const drawnCard =
-      sourceKey === "deck" ? source[0] : source[source.length - 1];
-    const newSource =
-      sourceKey === "deck" ? source.slice(1) : source.slice(0, -1);
+    const drawnCard = sourceKey === "deck" ? source[0] : source[source.length - 1];
+    const newSource = sourceKey === "deck" ? source.slice(1) : source.slice(0, -1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
     setDisplayHand(newHand);
@@ -264,14 +333,8 @@ export default function GameScreen() {
     setHasDrawnCard(true);
   };
 
-  const drawFromDeck = useCallback(
-    () => drawCard("deck"),
-    [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]
-  );
-  const drawFromDiscard = useCallback(
-    () => drawCard("discardPile"),
-    [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]
-  );
+  const drawFromDeck = useCallback(() => drawCard("deck"), [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]);
+  const drawFromDiscard = useCallback(() => drawCard("discardPile"), [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]);
 
   const discardCard = async (index) => {
     if (!isRoundActive) return;
@@ -281,8 +344,7 @@ export default function GameScreen() {
     }
     const cardToDiscard = displayHand[index];
     const cardIndex = playerHand.findIndex(
-      (card) =>
-        card.rank === cardToDiscard.rank && card.suit === cardToDiscard.suit
+      (card) => card.rank === cardToDiscard.rank && card.suit === cardToDiscard.suit
     );
     if (cardIndex === -1) {
       Alert.alert("Error: Card not found");
@@ -293,9 +355,7 @@ export default function GameScreen() {
     const newDisplayHand = [...displayHand];
     newDisplayHand.splice(index, 1);
     setDisplayHand(newDisplayHand);
-    const currentPlayerIndex = players.findIndex(
-      (player) => player.id === playerId
-    );
+    const currentPlayerIndex = players.findIndex((player) => player.id === playerId);
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     const nextPlayerId = players[nextPlayerIndex]?.id;
     await updateDoc(doc(db, "games", roomId), {
@@ -306,53 +366,35 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  // Use computed grouping to determine if a valid rump is available.
-  const validRumpAvailable = useMemo(
-    () => isValidRumpUsingComputedGroups(displayHand),
-    [displayHand]
-  );
+  // Determine if a valid rump is available.
+  const validRumpAvailable = useMemo(() => isValidRumpUsingComputedGroups(displayHand), [displayHand]);
 
   const handleCardPress = useCallback(
     (index) => {
       if (!isRoundActive) return;
-      // When in rump mode, the pressed card is the discard candidate.
       if (rumpMode) {
         const candidateCard = displayHand[index];
         const newHand = displayHand.filter((_, i) => i !== index);
-        const groups = computeGroups(newHand);
-        const covered = new Array(newHand.length).fill(false);
-        groups.forEach((group) => {
-          group.indices.forEach((idx) => {
-            covered[idx] = true;
-          });
-        });
-        if (covered.every((val) => val)) {
-          const currentPlayerIndex = players.findIndex(
-            (player) => player.id === playerId
-          );
+        if (computeOptimalLeftoverScore(newHand) === 0) {
+          const currentPlayerIndex = players.findIndex((player) => player.id === playerId);
           const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
           const nextPlayerId = players[nextPlayerIndex]?.id;
           updateDoc(doc(db, "games", roomId), {
             [`hands.${playerId}`]: newHand,
             discardPile: [...discardPile, candidateCard],
-            roundStatus: "waiting", // End round so only the host can start a new round.
+            roundStatus: "waiting",
             currentTurn: nextPlayerId,
-          }).catch((err) =>
-            console.error("Failed to update rump discard", err)
-          );
+          }).catch((err) => console.error("Failed to update rump discard", err));
           setRumpMode(false);
         } else {
           Alert.alert("Discarding this card would invalidate your rump!");
         }
         return;
       }
-
-      // Regular discard mode: if active, discard the selected card.
       if (discardMode) {
         discardCard(index);
         setDiscardMode(false);
       } else {
-        // If a card is already selected, swap its position with the new index.
         if (selectedCardIndex === index) {
           setSelectedCardIndex(null);
         } else if (selectedCardIndex !== null) {
@@ -363,43 +405,26 @@ export default function GameScreen() {
           setPlayerHand(newDisplayHand);
           updateDoc(doc(db, "games", roomId), {
             [`hands.${playerId}`]: newDisplayHand,
-          }).catch((err) =>
-            console.error("Failed to update hand order", err)
-          );
+          }).catch((err) => console.error("Failed to update hand order", err));
           setSelectedCardIndex(null);
         } else {
           setSelectedCardIndex(index);
         }
       }
     },
-    [
-      rumpMode,
-      displayHand,
-      discardMode,
-      selectedCardIndex,
-      roomId,
-      playerId,
-      players,
-      discardPile,
-      roundStatus,
-    ]
+    [rumpMode, displayHand, discardMode, selectedCardIndex, roomId, playerId, players, discardPile, roundStatus]
   );
 
-  // Only allow toggling discard or rump modes if the round is active.
   const canToggleDiscard = isRoundActive && playerId === currentTurn && hasDrawnCard && !rumpMode;
   const canToggleRump = isRoundActive && playerId === currentTurn && hasDrawnCard && !discardMode;
 
-  // Rump button style: only glow (green with gold border) when toggled and the hand is valid.
   const rumpButtonStyle = useMemo(() => {
-    if (!rumpMode) {
-      return { backgroundColor: "#ccc" };
-    }
+    if (!rumpMode) return { backgroundColor: "#ccc" };
     return validRumpAvailable
       ? { backgroundColor: "#0f0", borderWidth: 3, borderColor: "gold" }
       : { backgroundColor: "#a00" };
   }, [rumpMode, validRumpAvailable]);
 
-  // Highlight valid groups in the UI using computeGroups.
   const highlightMapping = useMemo(() => {
     const mapping = {};
     const groups = computeGroups(displayHand);
@@ -410,6 +435,12 @@ export default function GameScreen() {
     });
     return mapping;
   }, [displayHand]);
+
+  const winner = useMemo(() => {
+    if (roundStatus !== "gameOver") return null;
+    const sorted = [...players].sort((a, b) => (a.score || 0) - (b.score || 0));
+    return sorted[0];
+  }, [roundStatus, players]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -422,19 +453,20 @@ export default function GameScreen() {
         <Text style={[styles.header, { color: colors.text }]}>
           {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
         </Text>
+        {roundStatus === "gameOver" && winner && (
+          <Text style={[styles.winnerText, { color: colors.text }]}>
+            Winner: {winner.name} with {String(winner.score || 0).padStart(3, "0")}
+          </Text>
+        )}
         <View style={styles.avatarRow}>
           {players.map((player) => (
-            <View
-              key={player.id}
-              style={[
-                styles.avatarContainer,
-                avatarContainerSize,
-                player.id === currentTurn && styles.currentTurnHighlight,
-              ]}
-            >
+            <View key={player.id} style={[styles.avatarContainer, avatarContainerSize, player.id === currentTurn && styles.currentTurnHighlight]}>
               <Image source={avatars[player.avatar]} style={styles.avatarImage} />
               <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
                 {player.name}
+              </Text>
+              <Text style={styles.scoreText}>
+                {String(player.score || 0).padStart(3, "0")}
               </Text>
             </View>
           ))}
@@ -443,41 +475,24 @@ export default function GameScreen() {
           <View style={styles.deckColumn}>
             <TouchableOpacity
               onPress={drawFromDeck}
-              style={[
-                styles.deckCard,
-                (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
-              ]}
+              style={[styles.deckCard, (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck]}
               disabled={!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS}
             >
               <Text style={styles.cardText}>Deck ({deck.length})</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.rumpButton,
-                !canToggleRump && styles.disabledButton,
-                rumpButtonStyle,
-              ]}
+              style={[styles.rumpButton, !canToggleRump && styles.disabledButton, rumpButtonStyle]}
               onPress={() => {
                 if (!canToggleRump) {
                   Alert.alert("You cannot toggle Rump mode right now!");
                   return;
                 }
-                // Toggle rump mode on/off.
                 setRumpMode(!rumpMode);
-                if (rumpMode === true) {
-                  // When turning off rump mode, also disable discard mode.
-                  setDiscardMode(false);
-                }
+                if (rumpMode === true) setDiscardMode(false);
               }}
               disabled={!canToggleRump}
             >
-              <Text
-                style={[
-                  styles.rumpButtonText,
-                  !canToggleRump && styles.disabledButton,
-                  rumpMode ? { color: "#fff" } : { color: "#000" },
-                ]}
-              >
+              <Text style={[styles.rumpButtonText, !canToggleRump && styles.disabledButton, rumpMode ? { color: "#fff" } : { color: "#000" }]}>
                 Rump
               </Text>
             </TouchableOpacity>
@@ -485,31 +500,16 @@ export default function GameScreen() {
           <View style={styles.discardColumn}>
             <TouchableOpacity
               onPress={drawFromDiscard}
-              style={[
-                styles.deckCard,
-                (!isRoundActive ||
-                  hasDrawnCard ||
-                  discardPile.length === 0 ||
-                  playerHand.length >= MAX_CARDS) && styles.disabledDeck,
-              ]}
+              style={[styles.deckCard, (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck]}
               disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
             >
               {discardPile.length > 0 ? (
                 <View style={styles.card}>
-                  <Text
-                    style={[
-                      styles.cardText,
-                      {
-                        color: ["hearts", "diamonds"].includes(
-                          discardPile[discardPile.length - 1].suit
-                        )
-                          ? "red"
-                          : "black",
-                      },
-                    ]}
-                  >
-                    {discardPile[discardPile.length - 1].rank}{" "}
-                    {suitSymbols[discardPile[discardPile.length - 1].suit]}
+                  <Text style={[
+                    styles.cardText,
+                    { color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit) ? "red" : "black" },
+                  ]}>
+                    {discardPile[discardPile.length - 1].rank} {suitSymbols[discardPile[discardPile.length - 1].suit]}
                   </Text>
                 </View>
               ) : (
@@ -517,11 +517,7 @@ export default function GameScreen() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.discardButton,
-                !canToggleDiscard && styles.disabledButton,
-                discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-              ]}
+              style={[styles.discardButton, !canToggleDiscard && styles.disabledButton, discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" }]}
               onPress={() => {
                 if (!canToggleDiscard) {
                   Alert.alert("You cannot toggle Discard mode right now!");
@@ -532,13 +528,7 @@ export default function GameScreen() {
               }}
               disabled={!canToggleDiscard}
             >
-              <Text
-                style={[
-                  styles.discardButtonText,
-                  !canToggleDiscard && styles.disabledButton,
-                  discardMode ? { color: "#fff" } : { color: "#000" },
-                ]}
-              >
+              <Text style={[styles.discardButtonText, !canToggleDiscard && styles.disabledButton, discardMode ? { color: "#fff" } : { color: "#000" }]}>
                 Discard
               </Text>
             </TouchableOpacity>
@@ -546,30 +536,17 @@ export default function GameScreen() {
         </View>
         <View style={styles.handContainer}>
           {displayHand.map((card, index) => {
-            const comboStyle = highlightMapping[index]
-              ? { borderColor: highlightMapping[index], borderWidth: 3 }
-              : null;
+            const comboStyle = highlightMapping[index] ? { borderColor: highlightMapping[index], borderWidth: 3 } : null;
             return (
               <TouchableOpacity
                 key={`${card.rank}-${card.suit}-${index}`}
-                style={[
-                  styles.card,
-                  cardSize,
-                  selectedCardIndex === index && styles.selectedCard,
-                  comboStyle,
-                ]}
+                style={[styles.card, cardSize, selectedCardIndex === index && styles.selectedCard, comboStyle]}
                 onPress={() => handleCardPress(index)}
               >
-                <Text
-                  style={[
-                    styles.cardText,
-                    {
-                      color: ["hearts", "diamonds"].includes(card.suit)
-                        ? "red"
-                        : "black",
-                    },
-                  ]}
-                >
+                <Text style={[
+                  styles.cardText,
+                  { color: ["hearts", "diamonds"].includes(card.suit) ? "red" : "black" },
+                ]}>
                   {card.rank} {suitSymbols[card.suit]}
                 </Text>
               </TouchableOpacity>
@@ -603,6 +580,7 @@ const styles = StyleSheet.create({
   },
   startRoundText: { color: "#fff", fontFamily: "PressStart2P", fontSize: 14 },
   header: { fontSize: 20, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 10 },
+  winnerText: { fontFamily: "PressStart2P", fontSize: 16, marginBottom: 10 },
   avatarRow: { flexDirection: "row", justifyContent: "center", marginBottom: 10 },
   avatarContainer: {
     alignItems: "center",
@@ -627,10 +605,9 @@ const styles = StyleSheet.create({
   },
   avatarName: { fontFamily: "PressStart2P", fontSize: 10, marginTop: 5, color: "#000" },
   currentTurnAvatarName: { color: "yellow" },
+  scoreText: { fontFamily: "PressStart2P", fontSize: 10, marginTop: 2 },
   deckDiscardContainer: { flexDirection: "row", justifyContent: "space-evenly", marginVertical: 10 },
-  deckColumn: {
-    alignItems: "center",
-  },
+  deckColumn: { alignItems: "center" },
   deckCard: {
     width: 80,
     height: 110,
