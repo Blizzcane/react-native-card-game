@@ -23,6 +23,8 @@ const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 const MAX_CARDS = 10;
 const groupColors = ["#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3"];
 
+// Helper functions for deck and cards
+
 function getCardValues(card) {
   if (card.rank === "A") return [1, 11];
   if (card.rank === "J") return [12];
@@ -62,6 +64,7 @@ function isConsecutive(card1, card2) {
   return false;
 }
 
+// computeGroups returns candidate groups (sets or runs) with a minimum of 3 cards.
 function computeGroups(hand) {
   const groups = [];
   let i = 0;
@@ -70,7 +73,7 @@ function computeGroups(hand) {
     while (j < hand.length && hand[j].rank === hand[i].rank) {
       j++;
     }
-    if (j - i >= 2) {
+    if (j - i >= 3) {
       groups.push({
         indices: Array.from({ length: j - i }, (_, k) => i + k),
         type: "set",
@@ -85,7 +88,7 @@ function computeGroups(hand) {
       groupIndices.push(i + 1);
       i++;
     }
-    if (groupIndices.length >= 2) {
+    if (groupIndices.length >= 3) {
       groups.push({ indices: groupIndices, type: "run" });
     }
     i++;
@@ -93,12 +96,32 @@ function computeGroups(hand) {
   return groups;
 }
 
+// Checks if a 10-card hand can become a valid rump by discarding one card.
+// A valid rump is one where the remaining 9 cards can be completely grouped.
+function isValidRumpUsingComputedGroups(hand) {
+  if (hand.length !== 10) return false;
+  for (let i = 0; i < hand.length; i++) {
+    const candidateHand = hand.filter((_, idx) => idx !== i);
+    const groups = computeGroups(candidateHand);
+    const covered = new Array(candidateHand.length).fill(false);
+    groups.forEach((group) => {
+      group.indices.forEach((idx) => {
+        covered[idx] = true;
+      });
+    });
+    if (covered.every((v) => v === true)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
 
-  // Fixed sizes
+  // Fixed sizes for cards and avatars.
   const cardSize = { width: 80, height: 110 };
   const avatarContainerSize = { width: 100, height: 120 };
 
@@ -106,7 +129,7 @@ export default function GameScreen() {
   const [discardPile, setDiscardPile] = useState([]);
   const [playerHand, setPlayerHand] = useState([]);
   const [displayHand, setDisplayHand] = useState([]);
-  const [currentRound, setCurrentRound] = useState(1); // Change to 0 if you want first round to be 1 on start
+  const [currentRound, setCurrentRound] = useState(1);
   const [roundStatus, setRoundStatus] = useState("waiting");
   const [players, setPlayers] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
@@ -115,6 +138,13 @@ export default function GameScreen() {
   const [selectedCardIndex, setSelectedCardIndex] = useState(null);
   const [discardMode, setDiscardMode] = useState(false);
   const [rumpMode, setRumpMode] = useState(false);
+  
+  // New state to track dealer and starting turn.
+  const [dealerIndex, setDealerIndex] = useState(0);
+  const [startingPlayerIndex, setStartingPlayerIndex] = useState(0);
+
+  // A round is active only when its status is "started"
+  const isRoundActive = roundStatus === "started";
 
   useEffect(() => {
     if (!roomId) return;
@@ -129,10 +159,8 @@ export default function GameScreen() {
         if (data.hands && data.hands[playerId]) {
           const newHand = data.hands[playerId];
           setPlayerHand(newHand);
-          // Only update displayHand if the lengths differ
-          if (!displayHand.length || displayHand.length !== newHand.length) {
-            setDisplayHand(newHand);
-          }
+          // Immediately update displayHand when hand changes.
+          setDisplayHand(newHand);
         }
         if (data.hostId === playerId) {
           setIsHost(true);
@@ -143,6 +171,9 @@ export default function GameScreen() {
             setHasDrawnCard(false);
           }
         }
+        // Update dealer and starting player if available.
+        if (typeof data.dealerIndex === "number") setDealerIndex(data.dealerIndex);
+        if (typeof data.startingPlayerIndex === "number") setStartingPlayerIndex(data.startingPlayerIndex);
         setRoundStatus(data.roundStatus || "waiting");
       } else {
         Alert.alert("Game session not found!");
@@ -150,7 +181,7 @@ export default function GameScreen() {
       }
     });
     return () => unsubscribe();
-  }, [roomId, currentTurn, playerId, displayHand.length, router]);
+  }, [roomId, currentTurn, playerId, router]);
 
   const initializeRound = async () => {
     if (!isHost) return;
@@ -158,15 +189,20 @@ export default function GameScreen() {
       Alert.alert("No players available to start the round.");
       return;
     }
-    // If you want the game to start at Round 1, you can either initialize currentRound as 0
-    // or update this logic to not add 1 on the first round.
     if (currentRound >= 11) {
       await updateDoc(doc(db, "games", roomId), { roundStatus: "gameOver" });
       setRoundStatus("gameOver");
       return;
     }
+    // Rotate dealer: newDealerIndex is previous dealerIndex + 1 (mod players.length)
+    const currentDealerIndex = dealerIndex;
+    const newDealerIndex = (currentDealerIndex + 1) % players.length;
+    // For many card games, the player after the dealer goes first.
+    const newStartingIndex = (newDealerIndex + 1) % players.length;
+
     const newDeck = shuffleArray(generateDeck());
     const hands = {};
+    // Deal 9 cards to each player.
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
@@ -174,15 +210,25 @@ export default function GameScreen() {
       deck: newDeck,
       discardPile: [],
       hands,
-      currentRound: currentRound + 1, // This increments the round number.
+      currentRound: currentRound + 1,
       roundStatus: "started",
-      currentTurn: players[0]?.id,
+      dealerIndex: newDealerIndex,
+      startingPlayerIndex: newStartingIndex,
+      currentTurn: players[newStartingIndex]?.id,
     });
+    // Immediately update hand for the current player.
+    const myHand = hands[playerId] || [];
+    setPlayerHand(myHand);
+    setDisplayHand(myHand);
     setRoundStatus("started");
     setHasDrawnCard(false);
+    // Update local dealer and starting turn indices.
+    setDealerIndex(newDealerIndex);
+    setStartingPlayerIndex(newStartingIndex);
   };
 
   const drawCard = async (sourceKey) => {
+    if (!isRoundActive) return;
     const source = sourceKey === "deck" ? deck : discardPile;
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
@@ -193,17 +239,24 @@ export default function GameScreen() {
       return;
     }
     if (source.length === 0) {
-      Alert.alert(sourceKey === "deck" ? "The deck is empty!" : "The discard pile is empty!");
+      Alert.alert(
+        sourceKey === "deck" ? "The deck is empty!" : "The discard pile is empty!"
+      );
       return;
     }
     if (playerHand.length >= MAX_CARDS) {
-      Alert.alert(`You can only have ${MAX_CARDS} cards in your hand. Please discard first.`);
+      Alert.alert(
+        `You can only have ${MAX_CARDS} cards in your hand. Please discard first.`
+      );
       return;
     }
-    const drawnCard = sourceKey === "deck" ? source[0] : source[source.length - 1];
-    const newSource = sourceKey === "deck" ? source.slice(1) : source.slice(0, -1);
+    const drawnCard =
+      sourceKey === "deck" ? source[0] : source[source.length - 1];
+    const newSource =
+      sourceKey === "deck" ? source.slice(1) : source.slice(0, -1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
+    setDisplayHand(newHand);
     await updateDoc(doc(db, "games", roomId), {
       [sourceKey]: newSource,
       [`hands.${playerId}`]: newHand,
@@ -211,10 +264,17 @@ export default function GameScreen() {
     setHasDrawnCard(true);
   };
 
-  const drawFromDeck = useCallback(() => drawCard("deck"), [deck, playerHand, hasDrawnCard, currentTurn]);
-  const drawFromDiscard = useCallback(() => drawCard("discardPile"), [discardPile, playerHand, hasDrawnCard, currentTurn]);
+  const drawFromDeck = useCallback(
+    () => drawCard("deck"),
+    [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]
+  );
+  const drawFromDiscard = useCallback(
+    () => drawCard("discardPile"),
+    [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]
+  );
 
   const discardCard = async (index) => {
+    if (!isRoundActive) return;
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
       return;
@@ -233,7 +293,9 @@ export default function GameScreen() {
     const newDisplayHand = [...displayHand];
     newDisplayHand.splice(index, 1);
     setDisplayHand(newDisplayHand);
-    const currentPlayerIndex = players.findIndex((player) => player.id === playerId);
+    const currentPlayerIndex = players.findIndex(
+      (player) => player.id === playerId
+    );
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     const nextPlayerId = players[nextPlayerIndex]?.id;
     await updateDoc(doc(db, "games", roomId), {
@@ -244,43 +306,105 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
+  // Use computed grouping to determine if a valid rump is available.
+  const validRumpAvailable = useMemo(
+    () => isValidRumpUsingComputedGroups(displayHand),
+    [displayHand]
+  );
+
   const handleCardPress = useCallback(
     (index) => {
+      if (!isRoundActive) return;
+      // When in rump mode, the pressed card is the discard candidate.
+      if (rumpMode) {
+        const candidateCard = displayHand[index];
+        const newHand = displayHand.filter((_, i) => i !== index);
+        const groups = computeGroups(newHand);
+        const covered = new Array(newHand.length).fill(false);
+        groups.forEach((group) => {
+          group.indices.forEach((idx) => {
+            covered[idx] = true;
+          });
+        });
+        if (covered.every((val) => val)) {
+          const currentPlayerIndex = players.findIndex(
+            (player) => player.id === playerId
+          );
+          const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+          const nextPlayerId = players[nextPlayerIndex]?.id;
+          updateDoc(doc(db, "games", roomId), {
+            [`hands.${playerId}`]: newHand,
+            discardPile: [...discardPile, candidateCard],
+            roundStatus: "waiting", // End round so only the host can start a new round.
+            currentTurn: nextPlayerId,
+          }).catch((err) =>
+            console.error("Failed to update rump discard", err)
+          );
+          setRumpMode(false);
+        } else {
+          Alert.alert("Discarding this card would invalidate your rump!");
+        }
+        return;
+      }
+
+      // Regular discard mode: if active, discard the selected card.
       if (discardMode) {
         discardCard(index);
         setDiscardMode(false);
       } else {
+        // If a card is already selected, swap its position with the new index.
         if (selectedCardIndex === index) {
           setSelectedCardIndex(null);
         } else if (selectedCardIndex !== null) {
           const newDisplayHand = [...displayHand];
           const [card] = newDisplayHand.splice(selectedCardIndex, 1);
           newDisplayHand.splice(index, 0, card);
-          // Update both local states with the new order
           setDisplayHand(newDisplayHand);
           setPlayerHand(newDisplayHand);
-          // Sync the new hand order to Firebase
           updateDoc(doc(db, "games", roomId), {
             [`hands.${playerId}`]: newDisplayHand,
-          }).catch((err) => console.error("Failed to update hand order", err));
+          }).catch((err) =>
+            console.error("Failed to update hand order", err)
+          );
           setSelectedCardIndex(null);
         } else {
           setSelectedCardIndex(index);
         }
       }
     },
-    [discardMode, displayHand, selectedCardIndex, roomId, playerId]
+    [
+      rumpMode,
+      displayHand,
+      discardMode,
+      selectedCardIndex,
+      roomId,
+      playerId,
+      players,
+      discardPile,
+      roundStatus,
+    ]
   );
 
-  const canToggleDiscard = playerId === currentTurn && hasDrawnCard && !rumpMode;
-  const canToggleRump = playerId === currentTurn && hasDrawnCard && !discardMode;
+  // Only allow toggling discard or rump modes if the round is active.
+  const canToggleDiscard = isRoundActive && playerId === currentTurn && hasDrawnCard && !rumpMode;
+  const canToggleRump = isRoundActive && playerId === currentTurn && hasDrawnCard && !discardMode;
 
-  // Compute highlightMapping using useMemo
+  // Rump button style: only glow (green with gold border) when toggled and the hand is valid.
+  const rumpButtonStyle = useMemo(() => {
+    if (!rumpMode) {
+      return { backgroundColor: "#ccc" };
+    }
+    return validRumpAvailable
+      ? { backgroundColor: "#0f0", borderWidth: 3, borderColor: "gold" }
+      : { backgroundColor: "#a00" };
+  }, [rumpMode, validRumpAvailable]);
+
+  // Highlight valid groups in the UI using computeGroups.
   const highlightMapping = useMemo(() => {
     const mapping = {};
     const groups = computeGroups(displayHand);
     groups.forEach((group, i) => {
-      group.indices.forEach(index => {
+      group.indices.forEach((index) => {
         mapping[index] = groupColors[i % groupColors.length];
       });
     });
@@ -321,9 +445,9 @@ export default function GameScreen() {
               onPress={drawFromDeck}
               style={[
                 styles.deckCard,
-                (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
               ]}
-              disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+              disabled={!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS}
             >
               <Text style={styles.cardText}>Deck ({deck.length})</Text>
             </TouchableOpacity>
@@ -331,15 +455,19 @@ export default function GameScreen() {
               style={[
                 styles.rumpButton,
                 !canToggleRump && styles.disabledButton,
-                rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                rumpButtonStyle,
               ]}
               onPress={() => {
                 if (!canToggleRump) {
                   Alert.alert("You cannot toggle Rump mode right now!");
                   return;
                 }
+                // Toggle rump mode on/off.
                 setRumpMode(!rumpMode);
-                if (!rumpMode) setDiscardMode(false);
+                if (rumpMode === true) {
+                  // When turning off rump mode, also disable discard mode.
+                  setDiscardMode(false);
+                }
               }}
               disabled={!canToggleRump}
             >
@@ -359,10 +487,12 @@ export default function GameScreen() {
               onPress={drawFromDiscard}
               style={[
                 styles.deckCard,
-                (hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) &&
-                  styles.disabledDeck,
+                (!isRoundActive ||
+                  hasDrawnCard ||
+                  discardPile.length === 0 ||
+                  playerHand.length >= MAX_CARDS) && styles.disabledDeck,
               ]}
-              disabled={hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
+              disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
             >
               {discardPile.length > 0 ? (
                 <View style={styles.card}>
@@ -370,7 +500,9 @@ export default function GameScreen() {
                     style={[
                       styles.cardText,
                       {
-                        color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit)
+                        color: ["hearts", "diamonds"].includes(
+                          discardPile[discardPile.length - 1].suit
+                        )
                           ? "red"
                           : "black",
                       },
@@ -431,7 +563,11 @@ export default function GameScreen() {
                 <Text
                   style={[
                     styles.cardText,
-                    { color: ["hearts", "diamonds"].includes(card.suit) ? "red" : "black" },
+                    {
+                      color: ["hearts", "diamonds"].includes(card.suit)
+                        ? "red"
+                        : "black",
+                    },
                   ]}
                 >
                   {card.rank} {suitSymbols[card.suit]}
@@ -449,9 +585,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 10 },
   content: {
     flex: 1,
-    justifyContent: "flex-start", // Items start at the top
-    alignItems: "center",           // Center items horizontally
-    paddingVertical: 20,            // Add vertical padding for breathing room
+    justifyContent: "flex-start",
+    alignItems: "center",
+    paddingVertical: 20,
   },
   startRoundButton: {
     padding: 10,
