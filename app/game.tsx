@@ -106,7 +106,7 @@ export default function GameScreen() {
   const [discardPile, setDiscardPile] = useState([]);
   const [playerHand, setPlayerHand] = useState([]);
   const [displayHand, setDisplayHand] = useState([]);
-  const [currentRound, setCurrentRound] = useState(1);
+  const [currentRound, setCurrentRound] = useState(1); // Change to 0 if you want first round to be 1 on start
   const [roundStatus, setRoundStatus] = useState("waiting");
   const [players, setPlayers] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
@@ -123,12 +123,13 @@ export default function GameScreen() {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setPlayers(data.players || []);
-        setCurrentRound(data.currentRound || 1);
+        setCurrentRound(data.currentRound || 0);
         if (data.deck) setDeck(data.deck);
         if (data.discardPile) setDiscardPile(data.discardPile);
         if (data.hands && data.hands[playerId]) {
           const newHand = data.hands[playerId];
           setPlayerHand(newHand);
+          // Only update displayHand if the lengths differ
           if (!displayHand.length || displayHand.length !== newHand.length) {
             setDisplayHand(newHand);
           }
@@ -157,6 +158,8 @@ export default function GameScreen() {
       Alert.alert("No players available to start the round.");
       return;
     }
+    // If you want the game to start at Round 1, you can either initialize currentRound as 0
+    // or update this logic to not add 1 on the first round.
     if (currentRound >= 11) {
       await updateDoc(doc(db, "games", roomId), { roundStatus: "gameOver" });
       setRoundStatus("gameOver");
@@ -171,7 +174,7 @@ export default function GameScreen() {
       deck: newDeck,
       discardPile: [],
       hands,
-      currentRound: currentRound + 1,
+      currentRound: currentRound + 1, // This increments the round number.
       roundStatus: "started",
       currentTurn: players[0]?.id,
     });
@@ -198,8 +201,7 @@ export default function GameScreen() {
       return;
     }
     const drawnCard = sourceKey === "deck" ? source[0] : source[source.length - 1];
-    const newSource =
-      sourceKey === "deck" ? source.slice(1) : source.slice(0, -1);
+    const newSource = sourceKey === "deck" ? source.slice(1) : source.slice(0, -1);
     const newHand = [...playerHand, drawnCard];
     setPlayerHand(newHand);
     await updateDoc(doc(db, "games", roomId), {
@@ -254,18 +256,36 @@ export default function GameScreen() {
           const newDisplayHand = [...displayHand];
           const [card] = newDisplayHand.splice(selectedCardIndex, 1);
           newDisplayHand.splice(index, 0, card);
+          // Update both local states with the new order
           setDisplayHand(newDisplayHand);
+          setPlayerHand(newDisplayHand);
+          // Sync the new hand order to Firebase
+          updateDoc(doc(db, "games", roomId), {
+            [`hands.${playerId}`]: newDisplayHand,
+          }).catch((err) => console.error("Failed to update hand order", err));
           setSelectedCardIndex(null);
         } else {
           setSelectedCardIndex(index);
         }
       }
     },
-    [discardMode, displayHand, selectedCardIndex]
+    [discardMode, displayHand, selectedCardIndex, roomId, playerId]
   );
 
   const canToggleDiscard = playerId === currentTurn && hasDrawnCard && !rumpMode;
   const canToggleRump = playerId === currentTurn && hasDrawnCard && !discardMode;
+
+  // Compute highlightMapping using useMemo
+  const highlightMapping = useMemo(() => {
+    const mapping = {};
+    const groups = computeGroups(displayHand);
+    groups.forEach((group, i) => {
+      group.indices.forEach(index => {
+        mapping[index] = groupColors[i % groupColors.length];
+      });
+    });
+    return mapping;
+  }, [displayHand]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -296,16 +316,44 @@ export default function GameScreen() {
           ))}
         </View>
         <View style={styles.deckDiscardContainer}>
-          <TouchableOpacity
-            onPress={drawFromDeck}
-            style={[
-              styles.deckCard,
-              (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
-            ]}
-            disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
-          >
-            <Text style={styles.cardText}>Deck ({deck.length})</Text>
-          </TouchableOpacity>
+          <View style={styles.deckColumn}>
+            <TouchableOpacity
+              onPress={drawFromDeck}
+              style={[
+                styles.deckCard,
+                (hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+              ]}
+              disabled={hasDrawnCard || playerHand.length >= MAX_CARDS}
+            >
+              <Text style={styles.cardText}>Deck ({deck.length})</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.rumpButton,
+                !canToggleRump && styles.disabledButton,
+                rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+              ]}
+              onPress={() => {
+                if (!canToggleRump) {
+                  Alert.alert("You cannot toggle Rump mode right now!");
+                  return;
+                }
+                setRumpMode(!rumpMode);
+                if (!rumpMode) setDiscardMode(false);
+              }}
+              disabled={!canToggleRump}
+            >
+              <Text
+                style={[
+                  styles.rumpButtonText,
+                  !canToggleRump && styles.disabledButton,
+                  rumpMode ? { color: "#fff" } : { color: "#000" },
+                ]}
+              >
+                Rump
+              </Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.discardColumn}>
             <TouchableOpacity
               onPress={drawFromDiscard}
@@ -328,7 +376,8 @@ export default function GameScreen() {
                       },
                     ]}
                   >
-                    {discardPile[discardPile.length - 1].rank} {suitSymbols[discardPile[discardPile.length - 1].suit]}
+                    {discardPile[discardPile.length - 1].rank}{" "}
+                    {suitSymbols[discardPile[discardPile.length - 1].suit]}
                   </Text>
                 </View>
               ) : (
@@ -361,32 +410,6 @@ export default function GameScreen() {
                 Discard
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.rumpButton,
-                !canToggleRump && styles.disabledButton,
-                rumpMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-              ]}
-              onPress={() => {
-                if (!canToggleRump) {
-                  Alert.alert("You cannot toggle Rump mode right now!");
-                  return;
-                }
-                setRumpMode(!rumpMode);
-                if (!rumpMode) setDiscardMode(false);
-              }}
-              disabled={!canToggleRump}
-            >
-              <Text
-                style={[
-                  styles.rumpButtonText,
-                  !canToggleRump && styles.disabledButton,
-                  rumpMode ? { color: "#fff" } : { color: "#000" },
-                ]}
-              >
-                Rump
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
         <View style={styles.handContainer}>
@@ -397,7 +420,12 @@ export default function GameScreen() {
             return (
               <TouchableOpacity
                 key={`${card.rank}-${card.suit}-${index}`}
-                style={[styles.card, cardSize, selectedCardIndex === index && styles.selectedCard, comboStyle]}
+                style={[
+                  styles.card,
+                  cardSize,
+                  selectedCardIndex === index && styles.selectedCard,
+                  comboStyle,
+                ]}
                 onPress={() => handleCardPress(index)}
               >
                 <Text
@@ -419,7 +447,12 @@ export default function GameScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 10 },
-  content: { flex: 1, justifyContent: "space-evenly" },
+  content: {
+    flex: 1,
+    justifyContent: "flex-start", // Items start at the top
+    alignItems: "center",           // Center items horizontally
+    paddingVertical: 20,            // Add vertical padding for breathing room
+  },
   startRoundButton: {
     padding: 10,
     borderRadius: 3,
@@ -459,6 +492,9 @@ const styles = StyleSheet.create({
   avatarName: { fontFamily: "PressStart2P", fontSize: 10, marginTop: 5, color: "#000" },
   currentTurnAvatarName: { color: "yellow" },
   deckDiscardContainer: { flexDirection: "row", justifyContent: "space-evenly", marginVertical: 10 },
+  deckColumn: {
+    alignItems: "center",
+  },
   deckCard: {
     width: 80,
     height: 110,
