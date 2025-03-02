@@ -20,15 +20,99 @@ SplashScreen.preventAutoHideAsync();
 // Constants
 const suitSymbols = { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" };
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-const RANKS = [
-  "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"
-];
+const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const MAX_CARDS = 10;
 const groupColors = [
-  "#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3",
+  "#FF5733",
+  "#33FF57",
+  "#3357FF",
+  "#FF33A8",
+  "#A833FF",
+  "#33FFF3",
 ];
 
-/* --- Helper Functions --- */
+/* --- Static Image Imports --- */
+// Diamonds: images are named B1.png, B2.png, ..., B10.png, B12.png, B13.png, B14.png.
+const diamondImages = {
+  A: require("@/assets/images/card-images/B1.png"),
+  "2": require("@/assets/images/card-images/B2.png"),
+  "3": require("@/assets/images/card-images/B3.png"),
+  "4": require("@/assets/images/card-images/B4.png"),
+  "5": require("@/assets/images/card-images/B5.png"),
+  "6": require("@/assets/images/card-images/B6.png"),
+  "7": require("@/assets/images/card-images/B7.png"),
+  "8": require("@/assets/images/card-images/B8.png"),
+  "9": require("@/assets/images/card-images/B9.png"),
+  "10": require("@/assets/images/card-images/B10.png"),
+  J: require("@/assets/images/card-images/B12.png"),
+  Q: require("@/assets/images/card-images/B13.png"),
+  K: require("@/assets/images/card-images/B14.png"),
+};
+
+// Clubs (Clovers): images are named G1.png, G2.png, ..., G10.png, G12.png, G13.png, G14.png.
+const clubImages = {
+  A: require("@/assets/images/card-images/G1.png"),
+  "2": require("@/assets/images/card-images/G2.png"),
+  "3": require("@/assets/images/card-images/G3.png"),
+  "4": require("@/assets/images/card-images/G4.png"),
+  "5": require("@/assets/images/card-images/G5.png"),
+  "6": require("@/assets/images/card-images/G6.png"),
+  "7": require("@/assets/images/card-images/G7.png"),
+  "8": require("@/assets/images/card-images/G8.png"),
+  "9": require("@/assets/images/card-images/G9.png"),
+  "10": require("@/assets/images/card-images/G10.png"),
+  J: require("@/assets/images/card-images/G12.png"),
+  Q: require("@/assets/images/card-images/G13.png"),
+  K: require("@/assets/images/card-images/G14.png"),
+};
+
+// Hearts: images are named H1.png, H2.png, ..., H10.png, H12.png, H13.png, H14.png.
+const heartImages = {
+  A: require("@/assets/images/card-images/H1.png"),
+  "2": require("@/assets/images/card-images/H2.png"),
+  "3": require("@/assets/images/card-images/H3.png"),
+  "4": require("@/assets/images/card-images/H4.png"),
+  "5": require("@/assets/images/card-images/H5.png"),
+  "6": require("@/assets/images/card-images/H6.png"),
+  "7": require("@/assets/images/card-images/H7.png"),
+  "8": require("@/assets/images/card-images/H8.png"),
+  "9": require("@/assets/images/card-images/H9.png"),
+  "10": require("@/assets/images/card-images/H10.png"),
+  J: require("@/assets/images/card-images/H12.png"),
+  Q: require("@/assets/images/card-images/H13.png"),
+  K: require("@/assets/images/card-images/H14.png"),
+};
+
+// Spades: images are named L1.png, L2.png, ..., L10.png, L12.png, L13.png, L14.png.
+const spadeImages = {
+  A: require("@/assets/images/card-images/L1.png"),
+  "2": require("@/assets/images/card-images/L2.png"),
+  "3": require("@/assets/images/card-images/L3.png"),
+  "4": require("@/assets/images/card-images/L4.png"),
+  "5": require("@/assets/images/card-images/L5.png"),
+  "6": require("@/assets/images/card-images/L6.png"),
+  "7": require("@/assets/images/card-images/L7.png"),
+  "8": require("@/assets/images/card-images/L8.png"),
+  "9": require("@/assets/images/card-images/L9.png"),
+  "10": require("@/assets/images/card-images/L10.png"),
+  J: require("@/assets/images/card-images/L12.png"),
+  Q: require("@/assets/images/card-images/L13.png"),
+  K: require("@/assets/images/card-images/L14.png"),
+};
+
+const cardImages = {
+  diamonds: diamondImages,
+  clubs: clubImages,
+  hearts: heartImages,
+  spades: spadeImages,
+};
+
+// Helper function to get the image for a card.
+function getCardImage(card) {
+  return cardImages[card.suit][card.rank];
+}
+
+/* --- Other Helper Functions --- */
 
 // For grouping runs, an Ace can be 1 or 11.
 function getCardValues(card) {
@@ -93,7 +177,7 @@ function isValidGroup(cards) {
   return true;
 }
 
-// computeGroups: returns an array of groups based on the current hand arrangement.
+// computeGroups: returns an array of group objects (with indices) based on the current hand arrangement.
 function computeGroups(hand) {
   const groups = [];
   let i = 0;
@@ -130,7 +214,7 @@ function computeGroups(hand) {
 /* --- New Scoring Functions --- */
 
 // Computes the score from the player's arranged hand.
-// Cards that are part of a valid group score 0; ungrouped cards are summed.
+// Cards that are part of a valid group score 0; ungrouped cards sum up via getCardScore.
 function computeScoreFromArrangement(hand) {
   const groups = computeGroups(hand);
   const groupedIndices = new Set();
@@ -230,10 +314,9 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId, currentTurn, playerId, router]);
 
-  // When a round ends and if host, update scores.
+  // When a round ends and if host, update scores once.
   useEffect(() => {
     if (roundStatus === "waiting" && isHost && !scoresUpdated) {
-      // Immediately set the flag to prevent duplicate updates.
       setScoresUpdated(true);
       console.log("Round ended. Logging each player's hand:");
       players.forEach((player) => {
@@ -274,9 +357,15 @@ export default function GameScreen() {
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
+    // If there are less than 4 players, move the top card from the deck to the discard pile.
+    let newDiscardPile = [];
+    if (players.length < 4) {
+      const topCard = newDeck.shift();
+      newDiscardPile.push(topCard);
+    }
     await updateDoc(doc(db, "games", roomId), {
       deck: newDeck,
-      discardPile: [],
+      discardPile: newDiscardPile,
       hands,
       currentRound: currentRound + 1,
       roundStatus: "started",
@@ -325,14 +414,8 @@ export default function GameScreen() {
     setHasDrawnCard(true);
   };
 
-  const drawFromDeck = useCallback(
-    () => drawCard("deck"),
-    [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]
-  );
-  const drawFromDiscard = useCallback(
-    () => drawCard("discardPile"),
-    [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]
-  );
+  const drawFromDeck = useCallback(() => drawCard("deck"), [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]);
+  const drawFromDiscard = useCallback(() => drawCard("discardPile"), [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]);
 
   const discardCard = async (index) => {
     if (!isRoundActive) return;
@@ -364,10 +447,7 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  const validRumpAvailable = useMemo(
-    () => isValidRumpUsingComputedGroups(displayHand),
-    [displayHand]
-  );
+  const validRumpAvailable = useMemo(() => isValidRumpUsingComputedGroups(displayHand), [displayHand]);
 
   const handleCardPress = useCallback(
     (index) => {
@@ -515,11 +595,13 @@ export default function GameScreen() {
               }}
               disabled={!canToggleRump}
             >
-              <Text style={[
-                styles.rumpButtonText,
-                !canToggleRump && styles.disabledButton,
-                rumpMode ? { color: "#fff" } : { color: "#000" },
-              ]}>
+              <Text
+                style={[
+                  styles.rumpButtonText,
+                  !canToggleRump && styles.disabledButton,
+                  rumpMode ? { color: "#fff" } : { color: "#000" },
+                ]}
+              >
                 Rump
               </Text>
             </TouchableOpacity>
@@ -534,18 +616,7 @@ export default function GameScreen() {
               disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
             >
               {discardPile.length > 0 ? (
-                <View style={styles.card}>
-                  <Text style={[
-                    styles.cardText,
-                    {
-                      color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit)
-                        ? "red"
-                        : "black",
-                    },
-                  ]}>
-                    {discardPile[discardPile.length - 1].rank} {suitSymbols[discardPile[discardPile.length - 1].suit]}
-                  </Text>
-                </View>
+                <Image source={getCardImage(discardPile[discardPile.length - 1])} style={styles.cardImage} />
               ) : (
                 <Text style={styles.cardText}>Empty Discard</Text>
               )}
@@ -566,11 +637,13 @@ export default function GameScreen() {
               }}
               disabled={!canToggleDiscard}
             >
-              <Text style={[
-                styles.discardButtonText,
-                !canToggleDiscard && styles.disabledButton,
-                discardMode ? { color: "#fff" } : { color: "#000" },
-              ]}>
+              <Text
+                style={[
+                  styles.discardButtonText,
+                  !canToggleDiscard && styles.disabledButton,
+                  discardMode ? { color: "#fff" } : { color: "#000" },
+                ]}
+              >
                 Discard
               </Text>
             </TouchableOpacity>
@@ -592,14 +665,7 @@ export default function GameScreen() {
                 ]}
                 onPress={() => handleCardPress(index)}
               >
-                <Text style={[
-                  styles.cardText,
-                  {
-                    color: ["hearts", "diamonds"].includes(card.suit) ? "red" : "black",
-                  },
-                ]}>
-                  {card.rank} {suitSymbols[card.suit]}
-                </Text>
+                <Image source={getCardImage(card)} style={styles.cardImage} />
               </TouchableOpacity>
             );
           })}
@@ -769,4 +835,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   cardText: { fontFamily: "PressStart2P", fontSize: 12, textAlign: "center" },
+  cardImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "contain",
+  },
 });
