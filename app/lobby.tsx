@@ -189,7 +189,7 @@ export default function LobbyScreen() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.playerRow}>
-                <Image source={avatars[item.avatar]} style={styles.playerAvatar} />
+                <Image source={avatars[item.avatar]} style={styles.playerAvatar} /> 
                 <Text style={styles.playerText}>{item.name} {item.id === hostId ? "(Host)" : ""}</Text>
               </View>
             )}
@@ -249,7 +249,7 @@ export default function LobbyScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 20 },
+  header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 20 },
   playerRow: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
   playerAvatar: { width: 50, height: 50, marginRight: 10 },
   lobbyAvatarGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginVertical: 5, },
