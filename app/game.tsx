@@ -20,9 +20,13 @@ SplashScreen.preventAutoHideAsync();
 // Constants
 const suitSymbols = { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" };
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+const RANKS = [
+  "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"
+];
 const MAX_CARDS = 10;
-const groupColors = ["#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3"];
+const groupColors = [
+  "#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#A833FF", "#33FFF3",
+];
 
 /* --- Helper Functions --- */
 
@@ -44,7 +48,6 @@ function getCardScore(card) {
   return parseInt(card.rank, 10);
 }
 
-
 function generateDeck() {
   const deck = [];
   for (const suit of SUITS) {
@@ -64,7 +67,7 @@ function shuffleArray(array) {
   return arr;
 }
 
-// Returns true if card2 is consecutive to card1 considering Ace as 1 or 11.
+// Returns true if card2 is consecutive to card1 (same suit; Ace can be 1 or 11).
 function isConsecutive(card1, card2) {
   if (card1.suit !== card2.suit) return false;
   const vals1 = getCardValues(card1);
@@ -80,59 +83,17 @@ function isConsecutive(card1, card2) {
 // Determines if the cards form a valid group (set or run).
 function isValidGroup(cards) {
   if (cards.length < 3) return false;
-  // Check set: all same rank.
   const rank = cards[0].rank;
-  if (cards.every(c => c.rank === rank)) return true;
-  // Check run: same suit and consecutive.
+  if (cards.every((c) => c.rank === rank)) return true;
   const suit = cards[0].suit;
-  if (!cards.every(c => c.suit === suit)) return false;
+  if (!cards.every((c) => c.suit === suit)) return false;
   for (let i = 0; i < cards.length - 1; i++) {
     if (!isConsecutive(cards[i], cards[i + 1])) return false;
   }
   return true;
 }
 
-// Recursively compute the minimum leftover score by partitioning the hand
-// into valid groups. Cards not grouped add their score.
-function computeOptimalLeftoverScore(hand) {
-  const n = hand.length;
-  const memo = {};
-  function helper(start) {
-    if (start >= n) return 0;
-    if (memo[start] !== undefined) return memo[start];
-    // Option 1: leave the card at 'start' ungrouped.
-    let best = getCardScore(hand[start]) + helper(start + 1);
-    // Option 2: try forming a valid group starting at 'start'.
-    for (let L = 3; L <= n - start; L++) {
-      const group = hand.slice(start, start + L);
-      if (isValidGroup(group)) {
-        best = Math.min(best, helper(start + L));
-      }
-    }
-    memo[start] = best;
-    return best;
-  }
-  return helper(0);
-}
-
-function computeRoundScore(hand) {
-  return computeOptimalLeftoverScore(hand);
-}
-
-// For rump mode validation: from a 10-card hand, check if there is a card to discard
-// such that the remaining 9 cards have an optimal leftover score of 0.
-function isValidRumpUsingComputedGroups(hand) {
-  if (hand.length !== 10) return false;
-  for (let i = 0; i < hand.length; i++) {
-    const candidateHand = hand.filter((_, idx) => idx !== i);
-    if (computeOptimalLeftoverScore(candidateHand) === 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// computeGroups: Used to highlight contiguous groups in the UI.
+// computeGroups: returns an array of groups based on the current hand arrangement.
 function computeGroups(hand) {
   const groups = [];
   let i = 0;
@@ -166,6 +127,38 @@ function computeGroups(hand) {
   return groups;
 }
 
+/* --- New Scoring Functions --- */
+
+// Computes the score from the player's arranged hand.
+// Cards that are part of a valid group score 0; ungrouped cards are summed.
+function computeScoreFromArrangement(hand) {
+  const groups = computeGroups(hand);
+  const groupedIndices = new Set();
+  groups.forEach((group) => {
+    group.indices.forEach((index) => groupedIndices.add(index));
+  });
+  return hand.reduce((total, card, index) => {
+    return total + (groupedIndices.has(index) ? 0 : getCardScore(card));
+  }, 0);
+}
+
+// Use the new scoring method for the round.
+function computeRoundScore(hand) {
+  return computeScoreFromArrangement(hand);
+}
+
+// Rump mode validation: check if discarding one card makes the arranged score 0.
+function isValidRumpUsingComputedGroups(hand) {
+  if (hand.length !== 10) return false;
+  for (let i = 0; i < hand.length; i++) {
+    const candidateHand = hand.filter((_, idx) => idx !== i);
+    if (computeScoreFromArrangement(candidateHand) === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /* --- GameScreen Component --- */
 
 export default function GameScreen() {
@@ -175,7 +168,7 @@ export default function GameScreen() {
 
   // Fixed sizes.
   const cardSize = { width: 80, height: 110 };
-  const avatarContainerSize = { width: 100, height: 120 };
+  const avatarContainerSize = { width: 100 };
 
   const [deck, setDeck] = useState([]);
   const [discardPile, setDiscardPile] = useState([]);
@@ -197,7 +190,6 @@ export default function GameScreen() {
   const [dealerIndex, setDealerIndex] = useState(0);
   const [startingPlayerIndex, setStartingPlayerIndex] = useState(0);
 
-  // A round is active only when status === "started"
   const isRoundActive = roundStatus === "started";
 
   useEffect(() => {
@@ -238,11 +230,12 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId, currentTurn, playerId, router]);
 
-  // When a round ends (roundStatus becomes "waiting") and if host, update scores
-  // and log each player's hand and card values.
+  // When a round ends and if host, update scores.
   useEffect(() => {
-    if (roundStatus === "waiting" && !scoresUpdated && isHost) {
-      console.log("Round ended. Logging each player's hand and card values:");
+    if (roundStatus === "waiting" && isHost && !scoresUpdated) {
+      // Immediately set the flag to prevent duplicate updates.
+      setScoresUpdated(true);
+      console.log("Round ended. Logging each player's hand:");
       players.forEach((player) => {
         const hand = allHands[player.id] || [];
         console.log(`Player ${player.name}'s hand:`);
@@ -254,13 +247,13 @@ export default function GameScreen() {
         const hand = allHands[player.id] || [];
         const roundScore = computeRoundScore(hand);
         const prevScore = player.score || 0;
+        console.log(`Updating ${player.name}: prevScore: ${prevScore}, roundScore: ${roundScore}`);
         return { ...player, score: prevScore + roundScore };
       });
       updateDoc(doc(db, "games", roomId), { players: updatedPlayers })
-        .then(() => setScoresUpdated(true))
         .catch((err) => console.error("Failed to update scores", err));
     }
-  }, [roundStatus, scoresUpdated, isHost, players, allHands, roomId]);
+  }, [roundStatus, isHost, scoresUpdated, players, allHands, roomId]);
 
   const initializeRound = async () => {
     if (!isHost) return;
@@ -273,7 +266,6 @@ export default function GameScreen() {
       setRoundStatus("gameOver");
       return;
     }
-    // Rotate dealer and starting turn.
     const currentDealerIndex = dealerIndex;
     const newDealerIndex = (currentDealerIndex + 1) % players.length;
     const newStartingIndex = (newDealerIndex + 1) % players.length;
@@ -333,8 +325,14 @@ export default function GameScreen() {
     setHasDrawnCard(true);
   };
 
-  const drawFromDeck = useCallback(() => drawCard("deck"), [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]);
-  const drawFromDiscard = useCallback(() => drawCard("discardPile"), [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]);
+  const drawFromDeck = useCallback(
+    () => drawCard("deck"),
+    [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]
+  );
+  const drawFromDiscard = useCallback(
+    () => drawCard("discardPile"),
+    [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]
+  );
 
   const discardCard = async (index) => {
     if (!isRoundActive) return;
@@ -366,8 +364,10 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  // Determine if a valid rump is available.
-  const validRumpAvailable = useMemo(() => isValidRumpUsingComputedGroups(displayHand), [displayHand]);
+  const validRumpAvailable = useMemo(
+    () => isValidRumpUsingComputedGroups(displayHand),
+    [displayHand]
+  );
 
   const handleCardPress = useCallback(
     (index) => {
@@ -375,7 +375,7 @@ export default function GameScreen() {
       if (rumpMode) {
         const candidateCard = displayHand[index];
         const newHand = displayHand.filter((_, i) => i !== index);
-        if (computeOptimalLeftoverScore(newHand) === 0) {
+        if (computeScoreFromArrangement(newHand) === 0) {
           const currentPlayerIndex = players.findIndex((player) => player.id === playerId);
           const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
           const nextPlayerId = players[nextPlayerIndex]?.id;
@@ -458,16 +458,32 @@ export default function GameScreen() {
             Winner: {winner.name} with {String(winner.score || 0).padStart(3, "0")}
           </Text>
         )}
-        <View style={styles.avatarRow}>
+        <View style={[styles.avatarRow, avatarContainerSize]}>
           {players.map((player) => (
-            <View key={player.id} style={[styles.avatarContainer, avatarContainerSize, player.id === currentTurn && styles.currentTurnHighlight]}>
-              <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-              <Text style={[styles.avatarName, player.id === currentTurn && styles.currentTurnAvatarName]}>
+            <View
+              key={player.id}
+              style={[
+                styles.avatarContainer,
+                avatarContainerSize,
+                player.id === currentTurn && styles.currentTurnHighlight,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.avatarName,
+                  player.id === currentTurn && styles.currentTurnAvatarName,
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
                 {player.name}
               </Text>
-              <Text style={styles.scoreText}>
-                {String(player.score || 0).padStart(3, "0")}
-              </Text>
+              <Image source={avatars[player.avatar]} style={styles.avatarImage} />
+              <View style={styles.scoreBorder}>
+                <Text style={styles.scoreText} numberOfLines={1} adjustsFontSizeToFit>
+                  {String(player.score || 0).padStart(3, "0")}
+                </Text>
+              </View>
             </View>
           ))}
         </View>
@@ -475,13 +491,20 @@ export default function GameScreen() {
           <View style={styles.deckColumn}>
             <TouchableOpacity
               onPress={drawFromDeck}
-              style={[styles.deckCard, (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck]}
+              style={[
+                styles.deckCard,
+                (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+              ]}
               disabled={!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS}
             >
               <Text style={styles.cardText}>Deck ({deck.length})</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.rumpButton, !canToggleRump && styles.disabledButton, rumpButtonStyle]}
+              style={[
+                styles.rumpButton,
+                !canToggleRump && styles.disabledButton,
+                rumpButtonStyle,
+              ]}
               onPress={() => {
                 if (!canToggleRump) {
                   Alert.alert("You cannot toggle Rump mode right now!");
@@ -492,7 +515,11 @@ export default function GameScreen() {
               }}
               disabled={!canToggleRump}
             >
-              <Text style={[styles.rumpButtonText, !canToggleRump && styles.disabledButton, rumpMode ? { color: "#fff" } : { color: "#000" }]}>
+              <Text style={[
+                styles.rumpButtonText,
+                !canToggleRump && styles.disabledButton,
+                rumpMode ? { color: "#fff" } : { color: "#000" },
+              ]}>
                 Rump
               </Text>
             </TouchableOpacity>
@@ -500,14 +527,21 @@ export default function GameScreen() {
           <View style={styles.discardColumn}>
             <TouchableOpacity
               onPress={drawFromDiscard}
-              style={[styles.deckCard, (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck]}
+              style={[
+                styles.deckCard,
+                (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+              ]}
               disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
             >
               {discardPile.length > 0 ? (
                 <View style={styles.card}>
                   <Text style={[
                     styles.cardText,
-                    { color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit) ? "red" : "black" },
+                    {
+                      color: ["hearts", "diamonds"].includes(discardPile[discardPile.length - 1].suit)
+                        ? "red"
+                        : "black",
+                    },
                   ]}>
                     {discardPile[discardPile.length - 1].rank} {suitSymbols[discardPile[discardPile.length - 1].suit]}
                   </Text>
@@ -517,7 +551,11 @@ export default function GameScreen() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.discardButton, !canToggleDiscard && styles.disabledButton, discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" }]}
+              style={[
+                styles.discardButton,
+                !canToggleDiscard && styles.disabledButton,
+                discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+              ]}
               onPress={() => {
                 if (!canToggleDiscard) {
                   Alert.alert("You cannot toggle Discard mode right now!");
@@ -528,7 +566,11 @@ export default function GameScreen() {
               }}
               disabled={!canToggleDiscard}
             >
-              <Text style={[styles.discardButtonText, !canToggleDiscard && styles.disabledButton, discardMode ? { color: "#fff" } : { color: "#000" }]}>
+              <Text style={[
+                styles.discardButtonText,
+                !canToggleDiscard && styles.disabledButton,
+                discardMode ? { color: "#fff" } : { color: "#000" },
+              ]}>
                 Discard
               </Text>
             </TouchableOpacity>
@@ -536,16 +578,25 @@ export default function GameScreen() {
         </View>
         <View style={styles.handContainer}>
           {displayHand.map((card, index) => {
-            const comboStyle = highlightMapping[index] ? { borderColor: highlightMapping[index], borderWidth: 3 } : null;
+            const comboStyle = highlightMapping[index]
+              ? { borderColor: highlightMapping[index], borderWidth: 3 }
+              : null;
             return (
               <TouchableOpacity
                 key={`${card.rank}-${card.suit}-${index}`}
-                style={[styles.card, cardSize, selectedCardIndex === index && styles.selectedCard, comboStyle]}
+                style={[
+                  styles.card,
+                  cardSize,
+                  selectedCardIndex === index && styles.selectedCard,
+                  comboStyle,
+                ]}
                 onPress={() => handleCardPress(index)}
               >
                 <Text style={[
                   styles.cardText,
-                  { color: ["hearts", "diamonds"].includes(card.suit) ? "red" : "black" },
+                  {
+                    color: ["hearts", "diamonds"].includes(card.suit) ? "red" : "black",
+                  },
                 ]}>
                   {card.rank} {suitSymbols[card.suit]}
                 </Text>
@@ -579,9 +630,18 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   startRoundText: { color: "#fff", fontFamily: "PressStart2P", fontSize: 14 },
-  header: { fontSize: 20, fontFamily: "PressStart2P", textAlign: "center", marginBottom: 10 },
+  header: {
+    fontSize: 20,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    marginBottom: 10,
+  },
   winnerText: { fontFamily: "PressStart2P", fontSize: 16, marginBottom: 10 },
-  avatarRow: { flexDirection: "row", justifyContent: "center", marginBottom: 10 },
+  avatarRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
   avatarContainer: {
     alignItems: "center",
     padding: 5,
@@ -594,19 +654,47 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
   },
   currentTurnHighlight: { backgroundColor: "#9e9572" },
-  avatarImage: {
-    width: "100%",
-    height: "80%",
-    borderWidth: 4,
-    borderTopColor: "#404040",
-    borderLeftColor: "#404040",
-    borderBottomColor: "#fff",
-    borderRightColor: "#fff",
+  avatarName: {
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+    color: "#000",
+    flexShrink: 1,
+    minHeight: 15,
+    textAlign: "center",
   },
-  avatarName: { fontFamily: "PressStart2P", fontSize: 10, marginTop: 5, color: "#000" },
   currentTurnAvatarName: { color: "yellow" },
-  scoreText: { fontFamily: "PressStart2P", fontSize: 10, marginTop: 2 },
-  deckDiscardContainer: { flexDirection: "row", justifyContent: "space-evenly", marginVertical: 10 },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderWidth: 4,
+    borderLeftColor: "#404040",
+    borderTopColor: "#404040",
+    borderRightColor: "#fff",
+    borderBottomColor: "#fff",
+  },
+  scoreText: {
+    fontFamily: "PressStart2P",
+    fontSize: 10,
+    color: "white",
+    textAlign: "center",
+  },
+  scoreBorder: { 
+    borderWidth: 3,
+    backgroundColor: "black",
+    borderLeftColor: "#404040",
+    borderTopColor: "#404040",
+    borderRightColor: "#fff",
+    borderBottomColor: "#fff",
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+    marginTop: 5,
+    alignSelf: "center",
+  },
+  deckDiscardContainer: {
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+    marginVertical: 10,
+  },
   deckColumn: { alignItems: "center" },
   deckCard: {
     width: 80,
@@ -629,7 +717,11 @@ const styles = StyleSheet.create({
     borderRightColor: "#404040",
     borderBottomColor: "#404040",
   },
-  discardButtonText: { color: "#000", fontFamily: "PressStart2P", fontSize: 12 },
+  discardButtonText: {
+    color: "#000",
+    fontFamily: "PressStart2P",
+    fontSize: 12,
+  },
   disabledButton: { opacity: 0.5 },
   rumpButton: {
     padding: 10,
@@ -641,7 +733,12 @@ const styles = StyleSheet.create({
     borderRightColor: "#404040",
     borderBottomColor: "#404040",
   },
-  rumpButtonText: { color: "#000", fontFamily: "PressStart2P", fontSize: 12, textAlign: "center" },
+  rumpButtonText: {
+    color: "#000",
+    fontFamily: "PressStart2P",
+    fontSize: 12,
+    textAlign: "center",
+  },
   handContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -666,6 +763,10 @@ const styles = StyleSheet.create({
     padding: 5,
     margin: 5,
   },
-  selectedCard: { backgroundColor: "#ffffd0", borderColor: "#ff8800", borderWidth: 2 },
+  selectedCard: {
+    backgroundColor: "#ffffd0",
+    borderColor: "#ff8800",
+    borderWidth: 2,
+  },
   cardText: { fontFamily: "PressStart2P", fontSize: 12, textAlign: "center" },
 });
