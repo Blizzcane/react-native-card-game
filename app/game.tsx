@@ -276,6 +276,7 @@ export default function GameScreen() {
 
   const isRoundActive = roundStatus === "started";
 
+  // Snapshot listener for game document, now including the showGif flag.
   useEffect(() => {
     if (!roomId) return;
     const gameRef = doc(db, "games", roomId);
@@ -308,6 +309,11 @@ export default function GameScreen() {
         if (typeof data.startingPlayerIndex === "number")
           setStartingPlayerIndex(data.startingPlayerIndex);
         setRoundStatus(data.roundStatus || "waiting");
+
+        // Update local showGif state from Firestore.
+        if (typeof data.showGif === "boolean") {
+          setShowGif(data.showGif);
+        }
       } else {
         Alert.alert("Game session not found!");
         router.replace("/lobby");
@@ -316,6 +322,7 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId, currentTurn, playerId, router]);
 
+  // Host updates scores when roundStatus is "waiting"
   useEffect(() => {
     if (roundStatus === "waiting" && isHost && !scoresUpdated) {
       setScoresUpdated(true);
@@ -344,6 +351,7 @@ export default function GameScreen() {
     }
   }, [roundStatus, isHost, scoresUpdated, players, allHands, roomId, currentRound]);
 
+  // Modified initializeRound that broadcasts the showGif flag.
   const initializeRound = async () => {
     if (!isHost) return;
     if (players.length === 0) {
@@ -363,6 +371,7 @@ export default function GameScreen() {
       const topCard = newDeck.shift();
       newDiscardPile.push(topCard);
     }
+    // Update the document and broadcast showGif: true.
     await updateDoc(doc(db, "games", roomId), {
       deck: newDeck,
       discardPile: newDiscardPile,
@@ -372,6 +381,7 @@ export default function GameScreen() {
       dealerIndex: newDealerIndex,
       startingPlayerIndex: newStartingIndex,
       currentTurn: players[newStartingIndex]?.id,
+      showGif: true,
     });
     const myHand = hands[playerId] || [];
     setPlayerHand(myHand);
@@ -382,9 +392,12 @@ export default function GameScreen() {
     setDealerIndex(newDealerIndex);
     setStartingPlayerIndex(newStartingIndex);
 
-    // Show the GIF overlay for 5 seconds
-    setShowGif(true);
-    setTimeout(() => setShowGif(false), 5000);
+    // After 5 seconds, reset the showGif flag in Firestore.
+    setTimeout(() => {
+      updateDoc(doc(db, "games", roomId), { showGif: false }).catch((err) =>
+        console.error("Failed to reset showGif", err)
+      );
+    }, 5000);
   };
 
   const drawCard = async (sourceKey) => {
@@ -686,7 +699,7 @@ export default function GameScreen() {
         </View>
       </View>
       
-      {/* GIF overlay for card dealing */}
+      {/* GIF overlay for card dealing, now driven by showGif state from Firestore */}
       {showGif && (
         <View style={styles.gifOverlay}>
           <Image 
