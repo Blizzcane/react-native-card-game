@@ -16,8 +16,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { db } from "@/firebaseConfig";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import avatars from "@/utils/avatarLoader";
-
-// Static import for your GIF using a relative path.
+import MusicPlayer from "../components/MusicPlayer"; // Import the MusicPlayer component
 import ZZ2 from "../assets/images/ZZ2.gif";
 
 SplashScreen.preventAutoHideAsync();
@@ -36,12 +35,8 @@ const groupColors = [
   "#33FFF3",
 ];
 
-/* --- GlowingBorder Component --- */
-/*
-  This component renders an absolutely positioned Animated.View that creates a glowing border effect around its children.
-  When the "active" prop is true, the opacity of the glow pulses between 1 and 0.5.
-*/
-function GlowingBorder({ active, children }) {
+// --- GlowingBorder Component ---
+function GlowingBorder({ active, children }: { active: boolean; children: React.ReactNode }) {
   const glowOpacity = useRef(new Animated.Value(active ? 1 : 0)).current;
 
   useEffect(() => {
@@ -77,7 +72,7 @@ function GlowingBorder({ active, children }) {
           left: 0,
           right: 0,
           bottom: -4,
-          borderRadius: 0, // Adjust to match your avatar container
+          borderRadius: 0,
           borderWidth: 7,
           borderColor: "yellow",
           opacity: glowOpacity,
@@ -88,9 +83,8 @@ function GlowingBorder({ active, children }) {
   );
 }
 
-/* --- Static Image Imports --- */
-// Diamonds
-const diamondImages = {
+// --- Card Images and Helper Functions ---
+const diamondImages: Record<string, any> = {
   A: require("@/assets/images/card-images/B1.png"),
   "2": require("@/assets/images/card-images/B2.png"),
   "3": require("@/assets/images/card-images/B3.png"),
@@ -106,8 +100,7 @@ const diamondImages = {
   K: require("@/assets/images/card-images/B14.png"),
 };
 
-// Clubs
-const clubImages = {
+const clubImages: Record<string, any> = {
   A: require("@/assets/images/card-images/G1.png"),
   "2": require("@/assets/images/card-images/G2.png"),
   "3": require("@/assets/images/card-images/G3.png"),
@@ -123,8 +116,7 @@ const clubImages = {
   K: require("@/assets/images/card-images/G14.png"),
 };
 
-// Hearts
-const heartImages = {
+const heartImages: Record<string, any> = {
   A: require("@/assets/images/card-images/H1.png"),
   "2": require("@/assets/images/card-images/H2.png"),
   "3": require("@/assets/images/card-images/H3.png"),
@@ -140,8 +132,7 @@ const heartImages = {
   K: require("@/assets/images/card-images/H14.png"),
 };
 
-// Spades
-const spadeImages = {
+const spadeImages: Record<string, any> = {
   A: require("@/assets/images/card-images/L1.png"),
   "2": require("@/assets/images/card-images/L2.png"),
   "3": require("@/assets/images/card-images/L3.png"),
@@ -164,13 +155,11 @@ const cardImages = {
   spades: spadeImages,
 };
 
-function getCardImage(card) {
+function getCardImage(card: { suit: string; rank: string }) {
   return cardImages[card.suit][card.rank];
 }
 
-/* --- Other Helper Functions --- */
-
-function getCardValues(card) {
+function getCardValues(card: { rank: string }) {
   if (card.rank === "A") return [1, 11];
   if (card.rank === "J") return [12];
   if (card.rank === "Q") return [13];
@@ -178,7 +167,7 @@ function getCardValues(card) {
   return [parseInt(card.rank, 10)];
 }
 
-function getCardScore(card) {
+function getCardScore(card: { rank: string }) {
   if (card.rank === "A") return 11;
   if (card.rank === "J") return 12;
   if (card.rank === "Q") return 13;
@@ -187,7 +176,7 @@ function getCardScore(card) {
 }
 
 function generateDeck() {
-  const deck = [];
+  const deck: Array<{ suit: string; rank: string }> = [];
   for (const suit of SUITS) {
     for (const rank of RANKS) {
       deck.push({ suit, rank });
@@ -196,7 +185,7 @@ function generateDeck() {
   return deck;
 }
 
-function shuffleArray(array) {
+function shuffleArray(array: any[]) {
   const arr = array.slice();
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -205,7 +194,7 @@ function shuffleArray(array) {
   return arr;
 }
 
-function isConsecutive(card1, card2) {
+function isConsecutive(card1: { suit: string; rank: string }, card2: { suit: string; rank: string }) {
   if (card1.suit !== card2.suit) return false;
   const vals1 = getCardValues(card1);
   const vals2 = getCardValues(card2);
@@ -217,7 +206,7 @@ function isConsecutive(card1, card2) {
   return false;
 }
 
-function isValidGroup(cards) {
+function isValidGroup(cards: Array<{ suit: string; rank: string }>) {
   if (cards.length < 3) return false;
   const rank = cards[0].rank;
   if (cards.every((c) => c.rank === rank)) return true;
@@ -229,12 +218,12 @@ function isValidGroup(cards) {
   return true;
 }
 
-function computeOptimalGrouping(hand) {
+function computeOptimalGrouping(hand: Array<{ suit: string; rank: string }>) {
   const n = hand.length;
   const memo = new Array(n + 1).fill(null);
   const memoGroups = new Array(n + 1).fill(null);
 
-  function bestRemoval(i) {
+  function bestRemoval(i: number): number {
     if (i >= n) {
       memo[i] = 0;
       memoGroups[i] = [];
@@ -262,11 +251,11 @@ function computeOptimalGrouping(hand) {
   return memoGroups[0] || [];
 }
 
-function bestRemovalWrapper(hand) {
+function bestRemovalWrapper(hand: Array<{ suit: string; rank: string }>) {
   const n = hand.length;
   const memo = new Array(n + 1).fill(null);
 
-  function bestRemoval(i) {
+  function bestRemoval(i: number): number {
     if (i >= n) return 0;
     if (memo[i] !== null) return memo[i];
     let best = bestRemoval(i + 1);
@@ -283,18 +272,17 @@ function bestRemovalWrapper(hand) {
   return bestRemoval(0);
 }
 
-function computeScoreFromArrangement(hand) {
+function computeScoreFromArrangement(hand: Array<{ suit: string; rank: string }>) {
   const totalScore = hand.reduce((acc, card) => acc + getCardScore(card), 0);
   const removal = bestRemovalWrapper(hand);
   return totalScore - removal;
 }
 
-function computeRoundScore(hand) {
+function computeRoundScore(hand: Array<{ suit: string; rank: string }>) {
   return computeScoreFromArrangement(hand);
 }
 
-/* --- GameScreen Component --- */
-
+// --- GameScreen Component ---
 export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
@@ -304,31 +292,27 @@ export default function GameScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  const [deck, setDeck] = useState([]);
-  const [discardPile, setDiscardPile] = useState([]);
-  const [playerHand, setPlayerHand] = useState([]);
-  const [displayHand, setDisplayHand] = useState([]);
-  const [allHands, setAllHands] = useState({});
+  const [deck, setDeck] = useState<any[]>([]);
+  const [discardPile, setDiscardPile] = useState<any[]>([]);
+  const [playerHand, setPlayerHand] = useState<any[]>([]);
+  const [displayHand, setDisplayHand] = useState<any[]>([]);
+  const [allHands, setAllHands] = useState<any>({});
   const [currentRound, setCurrentRound] = useState(1);
   const [roundStatus, setRoundStatus] = useState("waiting");
-  const [players, setPlayers] = useState([]);
-  const [currentTurn, setCurrentTurn] = useState(null);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [currentTurn, setCurrentTurn] = useState<any>(null);
   const [isHost, setIsHost] = useState(false);
   const [hasDrawnCard, setHasDrawnCard] = useState(false);
-  const [selectedCardIndex, setSelectedCardIndex] = useState(null);
+  const [selectedCardIndex, setSelectedCardIndex] = useState<number | null>(null);
   const [discardMode, setDiscardMode] = useState(false);
   const [rumpMode, setRumpMode] = useState(false);
   const [scoresUpdated, setScoresUpdated] = useState(false);
-
-  // State for controlling the GIF overlay.
   const [showGif, setShowGif] = useState(false);
-
   const [dealerIndex, setDealerIndex] = useState(0);
   const [startingPlayerIndex, setStartingPlayerIndex] = useState(0);
 
   const isRoundActive = roundStatus === "started";
 
-  // Snapshot listener for game document, now including the showGif flag.
   useEffect(() => {
     if (!roomId) return;
     const gameRef = doc(db, "games", roomId);
@@ -362,7 +346,6 @@ export default function GameScreen() {
           setStartingPlayerIndex(data.startingPlayerIndex);
         setRoundStatus(data.roundStatus || "waiting");
 
-        // Update local showGif state from Firestore.
         if (typeof data.showGif === "boolean") {
           setShowGif(data.showGif);
         }
@@ -374,11 +357,9 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId, currentTurn, playerId, router]);
 
-  // Host updates scores when roundStatus is "waiting"
   useEffect(() => {
     if (roundStatus === "waiting" && isHost && !scoresUpdated) {
       setScoresUpdated(true);
-      console.log("Round ended. Logging each player's hand:");
       players.forEach((player) => {
         const hand = allHands[player.id] || [];
         console.log(`Player ${player.name}'s hand:`);
@@ -403,7 +384,6 @@ export default function GameScreen() {
     }
   }, [roundStatus, isHost, scoresUpdated, players, allHands, roomId, currentRound]);
 
-  // Modified initializeRound that broadcasts the showGif flag.
   const initializeRound = async () => {
     if (!isHost) return;
     if (players.length === 0) {
@@ -414,16 +394,15 @@ export default function GameScreen() {
     const newDealerIndex = (currentDealerIndex + 1) % players.length;
     const newStartingIndex = (newDealerIndex + 1) % players.length;
     const newDeck = shuffleArray(generateDeck());
-    const hands = {};
+    const hands: any = {};
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
-    let newDiscardPile = [];
+    let newDiscardPile: any[] = [];
     if (players.length < 4) {
       const topCard = newDeck.shift();
       newDiscardPile.push(topCard);
     }
-    // Update the document and broadcast showGif: true.
     await updateDoc(doc(db, "games", roomId), {
       deck: newDeck,
       discardPile: newDiscardPile,
@@ -444,7 +423,6 @@ export default function GameScreen() {
     setDealerIndex(newDealerIndex);
     setStartingPlayerIndex(newStartingIndex);
 
-    // After 5 seconds, reset the showGif flag in Firestore.
     setTimeout(() => {
       updateDoc(doc(db, "games", roomId), { showGif: false }).catch((err) =>
         console.error("Failed to reset showGif", err)
@@ -452,7 +430,7 @@ export default function GameScreen() {
     }, 5000);
   };
 
-  const drawCard = async (sourceKey) => {
+  const drawCard = async (sourceKey: "deck" | "discardPile") => {
     if (!isRoundActive) return;
     const source = sourceKey === "deck" ? deck : discardPile;
     if (playerId !== currentTurn) {
@@ -486,7 +464,7 @@ export default function GameScreen() {
   const drawFromDeck = useCallback(() => drawCard("deck"), [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]);
   const drawFromDiscard = useCallback(() => drawCard("discardPile"), [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]);
 
-  const discardCard = async (index) => {
+  const discardCard = async (index: number) => {
     if (!isRoundActive) return;
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
@@ -521,79 +499,59 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  const optimalGroups = useMemo(
-    () => computeOptimalGrouping(displayHand),
-    [displayHand]
-  );
+  const optimalGroups = useMemo(() => computeOptimalGrouping(displayHand), [displayHand]);
   const highlightMapping = useMemo(() => {
-    const mapping = {};
+    const mapping: any = {};
     optimalGroups.forEach((group, i) => {
-      group.forEach((index) => {
+      group.forEach((index: number) => {
         mapping[index] = groupColors[i % groupColors.length];
       });
     });
     return mapping;
   }, [optimalGroups]);
 
-  const handleCardPress = useCallback(
-    (index) => {
-      if (!isRoundActive) return;
-      if (rumpMode) {
-        const candidateCard = displayHand[index];
-        const newHand = displayHand.filter((_, i) => i !== index);
-        if (computeScoreFromArrangement(newHand) === 0) {
-          const currentPlayerIndex = players.findIndex(
-            (player) => player.id === playerId
-          );
-          const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
-          const nextPlayerId = players[nextPlayerIndex]?.id;
-          updateDoc(doc(db, "games", roomId), {
-            [`hands.${playerId}`]: newHand,
-            discardPile: [...discardPile, candidateCard],
-            roundStatus: "waiting",
-            currentTurn: nextPlayerId,
-          }).catch((err) =>
-            console.error("Failed to update rump discard", err)
-          );
-          setRumpMode(false);
-        } else {
-          Alert.alert("Discarding this card would invalidate your rump!");
-        }
-        return;
-      }
-      if (discardMode) {
-        discardCard(index);
-        setDiscardMode(false);
+  const handleCardPress = useCallback((index: number) => {
+    if (!isRoundActive) return;
+    if (rumpMode) {
+      const candidateCard = displayHand[index];
+      const newHand = displayHand.filter((_, i) => i !== index);
+      if (computeScoreFromArrangement(newHand) === 0) {
+        const currentPlayerIndex = players.findIndex((player) => player.id === playerId);
+        const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+        const nextPlayerId = players[nextPlayerIndex]?.id;
+        updateDoc(doc(db, "games", roomId), {
+          [`hands.${playerId}`]: newHand,
+          discardPile: [...discardPile, candidateCard],
+          roundStatus: "waiting",
+          currentTurn: nextPlayerId,
+        }).catch((err) => console.error("Failed to update rump discard", err));
+        setRumpMode(false);
       } else {
-        if (selectedCardIndex === index) {
-          setSelectedCardIndex(null);
-        } else if (selectedCardIndex !== null) {
-          const newDisplayHand = [...displayHand];
-          const [card] = newDisplayHand.splice(selectedCardIndex, 1);
-          newDisplayHand.splice(index, 0, card);
-          setDisplayHand(newDisplayHand);
-          setPlayerHand(newDisplayHand);
-          updateDoc(doc(db, "games", roomId), {
-            [`hands.${playerId}`]: newDisplayHand,
-          }).catch((err) => console.error("Failed to update hand order", err));
-          setSelectedCardIndex(null);
-        } else {
-          setSelectedCardIndex(index);
-        }
+        Alert.alert("Discarding this card would invalidate your rump!");
       }
-    },
-    [
-      rumpMode,
-      displayHand,
-      discardMode,
-      selectedCardIndex,
-      roomId,
-      playerId,
-      players,
-      discardPile,
-      roundStatus,
-    ]
-  );
+      return;
+    }
+    if (discardMode) {
+      discardCard(index);
+      setDiscardMode(false);
+    } else {
+      if (selectedCardIndex === index) {
+        setSelectedCardIndex(null);
+      } else if (selectedCardIndex !== null) {
+        const newDisplayHand = [...displayHand];
+        const [card] = newDisplayHand.splice(selectedCardIndex, 1);
+        newDisplayHand.splice(index, 0, card);
+        setDisplayHand(newDisplayHand);
+        setPlayerHand(newDisplayHand);
+        updateDoc(doc(db, "games", roomId), {
+          [`hands.${playerId}`]: newDisplayHand,
+        }).catch((err) => console.error("Failed to update hand order", err));
+        setSelectedCardIndex(null);
+      } else {
+        setSelectedCardIndex(index);
+      }
+    }
+  }, [rumpMode, displayHand, discardMode, selectedCardIndex, roomId, playerId, players, discardPile, roundStatus]);
 
   const canToggleDiscard = isRoundActive && playerId === currentTurn && hasDrawnCard && !rumpMode;
   const canToggleRump = isRoundActive && playerId === currentTurn && hasDrawnCard && !discardMode;
@@ -613,6 +571,8 @@ export default function GameScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Render MusicPlayer. Its absolute positioning ensures it won't interfere with the UI */}
+      <MusicPlayer hideButton={showGif} />
       <View style={styles.content}>
         {isHost && roundStatus === "waiting" && (
           <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
@@ -628,11 +588,9 @@ export default function GameScreen() {
           </Text>
         )}
         <View style={[styles.infoArea, { flexDirection: isLandscape ? "row" : "column" }]}>
-          {/* Avatar Section with glowing border effect */}
           <View style={styles.avatarSection}>
             {players.map((player) => {
               const isCurrent = player.id === currentTurn;
-              // Only glow for the local player if it's their turn and they haven't drawn a card.
               const shouldGlow = isCurrent && (player.id === playerId ? !hasDrawnCard : false);
               const avatarContent = (
                 <View
@@ -669,7 +627,6 @@ export default function GameScreen() {
               );
             })}
           </View>
-          {/* Deck/Discard Section */}
           <View style={styles.deckDiscardContainer}>
             <View style={styles.deckColumn}>
               <TouchableOpacity
@@ -704,10 +661,7 @@ export default function GameScreen() {
                 onPress={drawFromDiscard}
                 style={[
                   styles.deckCard,
-                  (!isRoundActive ||
-                    hasDrawnCard ||
-                    discardPile.length === 0 ||
-                    playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                  (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
                 ]}
                 disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
               >
@@ -762,8 +716,6 @@ export default function GameScreen() {
           })}
         </View>
       </View>
-      
-      {/* GIF overlay for card dealing, now driven by showGif state from Firestore */}
       {showGif && (
         <View style={styles.gifOverlay}>
           <Image 
@@ -776,7 +728,7 @@ export default function GameScreen() {
   );
 }
 
-const validRumpAvailable = (hand) => {
+const validRumpAvailable = (hand: any[]) => {
   if (hand.length !== 10) return false;
   for (let i = 0; i < hand.length; i++) {
     const candidateHand = hand.filter((_, idx) => idx !== i);
@@ -977,7 +929,7 @@ const styles = StyleSheet.create({
   },
 });
 
-function isValidRumpUsingComputedGroups(hand) {
+function isValidRumpUsingComputedGroups(hand: any[]) {
   if (hand.length !== 10) return false;
   for (let i = 0; i < hand.length; i++) {
     const candidateHand = hand.filter((_, idx) => idx !== i);
