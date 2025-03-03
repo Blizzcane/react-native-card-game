@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import {
   SafeAreaView,
   View,
@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   useWindowDimensions,
+  Animated,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@react-navigation/native";
@@ -34,6 +35,58 @@ const groupColors = [
   "#A833FF",
   "#33FFF3",
 ];
+
+/* --- GlowingBorder Component --- */
+/*
+  This component renders an absolutely positioned Animated.View that creates a glowing border effect around its children.
+  When the "active" prop is true, the opacity of the glow pulses between 1 and 0.5.
+*/
+function GlowingBorder({ active, children }) {
+  const glowOpacity = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (active) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowOpacity, {
+            toValue: 0.5,
+            duration: 500,
+            useNativeDriver: false,
+          }),
+          Animated.timing(glowOpacity, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: false,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      glowOpacity.stopAnimation();
+      glowOpacity.setValue(0);
+    }
+  }, [active, glowOpacity]);
+
+  return (
+    <View style={{ position: "relative" }}>
+      <Animated.View
+        style={{
+          position: "absolute",
+          top: -4,
+          left: 0,
+          right: 0,
+          bottom: -4,
+          borderRadius: 0, // Adjust to match your avatar container
+          borderWidth: 7,
+          borderColor: "yellow",
+          opacity: glowOpacity,
+        }}
+      />
+      {children}
+    </View>
+  );
+}
 
 /* --- Static Image Imports --- */
 // Diamonds
@@ -111,7 +164,6 @@ const cardImages = {
   spades: spadeImages,
 };
 
-// Helper function to get the image for a card.
 function getCardImage(card) {
   return cardImages[card.suit][card.rank];
 }
@@ -210,12 +262,6 @@ function computeOptimalGrouping(hand) {
   return memoGroups[0] || [];
 }
 
-function computeScoreFromArrangement(hand) {
-  const totalScore = hand.reduce((acc, card) => acc + getCardScore(card), 0);
-  const removal = bestRemovalWrapper(hand);
-  return totalScore - removal;
-}
-
 function bestRemovalWrapper(hand) {
   const n = hand.length;
   const memo = new Array(n + 1).fill(null);
@@ -235,6 +281,12 @@ function bestRemovalWrapper(hand) {
     return best;
   }
   return bestRemoval(0);
+}
+
+function computeScoreFromArrangement(hand) {
+  const totalScore = hand.reduce((acc, card) => acc + getCardScore(card), 0);
+  const removal = bestRemovalWrapper(hand);
+  return totalScore - removal;
 }
 
 function computeRoundScore(hand) {
@@ -576,34 +628,46 @@ export default function GameScreen() {
           </Text>
         )}
         <View style={[styles.infoArea, { flexDirection: isLandscape ? "row" : "column" }]}>
-          {/* Avatar Section */}
+          {/* Avatar Section with glowing border effect */}
           <View style={styles.avatarSection}>
-            {players.map((player) => (
-              <View
-                key={player.id}
-                style={[
-                  styles.avatarContainer,
-                  player.id === currentTurn && styles.currentTurnHighlight,
-                ]}
-              >
-                <Text
+            {players.map((player) => {
+              const isCurrent = player.id === currentTurn;
+              // Only glow for the local player if it's their turn and they haven't drawn a card.
+              const shouldGlow = isCurrent && (player.id === playerId ? !hasDrawnCard : false);
+              const avatarContent = (
+                <View
+                  key={player.id}
                   style={[
-                    styles.avatarName,
-                    player.id === currentTurn && styles.currentTurnAvatarName,
+                    styles.avatarContainer,
+                    isCurrent && styles.currentTurnHighlight,
                   ]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
                 >
-                  {player.name}
-                </Text>
-                <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-                <View style={styles.scoreBorder}>
-                  <Text style={styles.scoreText} numberOfLines={1} adjustsFontSizeToFit>
-                    {String(player.score || 0).padStart(3, "0")}
+                  <Text
+                    style={[
+                      styles.avatarName,
+                      isCurrent && styles.currentTurnAvatarName,
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                  >
+                    {player.name}
                   </Text>
+                  <Image source={avatars[player.avatar]} style={styles.avatarImage} />
+                  <View style={styles.scoreBorder}>
+                    <Text style={styles.scoreText} numberOfLines={1} adjustsFontSizeToFit>
+                      {String(player.score || 0).padStart(3, "0")}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+              return shouldGlow ? (
+                <GlowingBorder key={player.id} active={shouldGlow}>
+                  {avatarContent}
+                </GlowingBorder>
+              ) : (
+                avatarContent
+              );
+            })}
           </View>
           {/* Deck/Discard Section */}
           <View style={styles.deckDiscardContainer}>
