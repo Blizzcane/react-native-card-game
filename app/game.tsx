@@ -163,6 +163,7 @@ function isConsecutive(card1, card2) {
   return false;
 }
 
+// This function is used for validation.
 function isValidGroup(cards) {
   if (cards.length < 3) return false;
   const rank = cards[0].rank;
@@ -175,63 +176,74 @@ function isValidGroup(cards) {
   return true;
 }
 
-function computeGroups(hand) {
-  const groups = [];
-  let i = 0;
-  // Find sets.
-  while (i < hand.length) {
-    let j = i + 1;
-    while (j < hand.length && hand[j].rank === hand[i].rank) {
-      j++;
+// Original computeGroups is still available for other purposes.
+// However, to highlight the optimal grouping (i.e. the one used for scoring),
+// we add a new helper that returns the non‑overlapping groups.
+function computeOptimalGrouping(hand) {
+  const n = hand.length;
+  const memo = new Array(n + 1).fill(null);
+  const memoGroups = new Array(n + 1).fill(null);
+
+  function bestRemoval(i) {
+    if (i >= n) {
+      memo[i] = 0;
+      memoGroups[i] = [];
+      return 0;
     }
-    if (j - i >= 3) {
-      groups.push({
-        indices: Array.from({ length: j - i }, (_, k) => i + k),
-        type: "set",
-      });
+    if (memo[i] !== null) return memo[i];
+    // Option 1: Skip card at index i.
+    let best = bestRemoval(i + 1);
+    let bestGroups = memoGroups[i + 1] || [];
+    // Option 2: Try every contiguous segment starting at i (length ≥ 3).
+    for (let j = i + 3; j <= n; j++) {
+      const group = hand.slice(i, j);
+      if (isValidGroup(group)) {
+        const groupScore = group.reduce((acc, card) => acc + getCardScore(card), 0);
+        const candidate = groupScore + bestRemoval(j);
+        if (candidate > best) {
+          best = candidate;
+          bestGroups = [Array.from({ length: j - i }, (_, k) => i + k)].concat(memoGroups[j] || []);
+        }
+      }
     }
-    i = j;
+    memo[i] = best;
+    memoGroups[i] = bestGroups;
+    return best;
   }
-  // Find runs.
-  i = 0;
-  while (i < hand.length) {
-    const groupIndices = [i];
-    while (i < hand.length - 1 && isConsecutive(hand[i], hand[i + 1])) {
-      groupIndices.push(i + 1);
-      i++;
-    }
-    if (groupIndices.length >= 3) {
-      groups.push({ indices: groupIndices, type: "run" });
-    }
-    i++;
-  }
-  return groups;
+  bestRemoval(0);
+  return memoGroups[0] || [];
 }
 
+// The original scoring function now uses our dynamic programming approach.
 function computeScoreFromArrangement(hand) {
-  const groups = computeGroups(hand);
-  const groupedIndices = new Set();
-  groups.forEach((group) => {
-    group.indices.forEach((index) => groupedIndices.add(index));
-  });
-  return hand.reduce((total, card, index) => {
-    return total + (groupedIndices.has(index) ? 0 : getCardScore(card));
-  }, 0);
+  const totalScore = hand.reduce((acc, card) => acc + getCardScore(card), 0);
+  const removal = bestRemovalWrapper(hand);
+  return totalScore - removal;
+}
+
+function bestRemovalWrapper(hand) {
+  const n = hand.length;
+  const memo = new Array(n + 1).fill(null);
+
+  function bestRemoval(i) {
+    if (i >= n) return 0;
+    if (memo[i] !== null) return memo[i];
+    let best = bestRemoval(i + 1);
+    for (let j = i + 3; j <= n; j++) {
+      const group = hand.slice(i, j);
+      if (isValidGroup(group)) {
+        const groupScore = group.reduce((acc, card) => acc + getCardScore(card), 0);
+        best = Math.max(best, groupScore + bestRemoval(j));
+      }
+    }
+    memo[i] = best;
+    return best;
+  }
+  return bestRemoval(0);
 }
 
 function computeRoundScore(hand) {
   return computeScoreFromArrangement(hand);
-}
-
-function isValidRumpUsingComputedGroups(hand) {
-  if (hand.length !== 10) return false;
-  for (let i = 0; i < hand.length; i++) {
-    const candidateHand = hand.filter((_, idx) => idx !== i);
-    if (computeScoreFromArrangement(candidateHand) === 0) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /* --- GameScreen Component --- */
@@ -309,8 +321,6 @@ export default function GameScreen() {
   }, [roomId, currentTurn, playerId, router]);
 
   // Scoring & round-end effect.
-  // When roundStatus is "waiting" (i.e. the round just ended) and the host hasn't yet updated scores,
-  // update scores. Additionally, if this was round 11, automatically set roundStatus to "gameOver".
   useEffect(() => {
     if (roundStatus === "waiting" && isHost && !scoresUpdated) {
       setScoresUpdated(true);
@@ -329,7 +339,6 @@ export default function GameScreen() {
         console.log(`Updating ${player.name}: prevScore: ${prevScore}, roundScore: ${roundScore}`);
         return { ...player, score: prevScore + roundScore };
       });
-      // If round 11 ended, automatically mark the game as over.
       if (currentRound === 11) {
         updateDoc(doc(db, "games", roomId), { players: updatedPlayers, roundStatus: "gameOver" })
           .catch((err) => console.error("Failed to update scores", err));
@@ -346,7 +355,6 @@ export default function GameScreen() {
       Alert.alert("No players available to start the round.");
       return;
     }
-    // For rounds before 11, start a new round.
     const currentDealerIndex = dealerIndex;
     const newDealerIndex = (currentDealerIndex + 1) % players.length;
     const newStartingIndex = (newDealerIndex + 1) % players.length;
@@ -442,7 +450,6 @@ export default function GameScreen() {
       discardPile: [...discardPile, discardedCard],
       currentTurn: nextPlayerId,
     });
-    // After discarding, if the deck is empty (i.e. the next player cannot draw), end the round.
     if (deck.length === 0) {
       Alert.alert("Deck is empty. Ending round.");
       await updateDoc(doc(db, "games", roomId), { roundStatus: "waiting" });
@@ -450,10 +457,20 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  const validRumpAvailable = useMemo(
-    () => isValidRumpUsingComputedGroups(displayHand),
+  // --- Highlighting: Use the optimal grouping computed for the arranged hand ---
+  const optimalGroups = useMemo(
+    () => computeOptimalGrouping(displayHand),
     [displayHand]
   );
+  const highlightMapping = useMemo(() => {
+    const mapping = {};
+    optimalGroups.forEach((group, i) => {
+      group.forEach((index) => {
+        mapping[index] = groupColors[i % groupColors.length];
+      });
+    });
+    return mapping;
+  }, [optimalGroups]);
 
   const handleCardPress = useCallback(
     (index) => {
@@ -520,21 +537,10 @@ export default function GameScreen() {
 
   const rumpButtonStyle = useMemo(() => {
     if (!rumpMode) return { backgroundColor: "#ccc" };
-    return validRumpAvailable
+    return validRumpAvailable(displayHand)
       ? { backgroundColor: "#0f0", borderWidth: 3, borderColor: "gold" }
       : { backgroundColor: "#a00" };
-  }, [rumpMode, validRumpAvailable]);
-
-  const highlightMapping = useMemo(() => {
-    const mapping = {};
-    const groups = computeGroups(displayHand);
-    groups.forEach((group, i) => {
-      group.indices.forEach((index) => {
-        mapping[index] = groupColors[i % groupColors.length];
-      });
-    });
-    return mapping;
-  }, [displayHand]);
+  }, [rumpMode, displayHand]);
 
   const winner = useMemo(() => {
     if (roundStatus !== "gameOver") return null;
@@ -685,6 +691,17 @@ export default function GameScreen() {
   );
 }
 
+const validRumpAvailable = (hand) => {
+  if (hand.length !== 10) return false;
+  for (let i = 0; i < hand.length; i++) {
+    const candidateHand = hand.filter((_, idx) => idx !== i);
+    if (computeScoreFromArrangement(candidateHand) === 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 10 },
   content: {
@@ -722,7 +739,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     justifyContent: "center", 
-    marginHorizontal: 20
+    marginHorizontal: 20,
   },
   avatarContainer: {
     alignItems: "center",
@@ -858,3 +875,15 @@ const styles = StyleSheet.create({
     resizeMode: "contain",
   },
 });
+
+// A helper for rump mode highlighting.
+function isValidRumpUsingComputedGroups(hand) {
+  if (hand.length !== 10) return false;
+  for (let i = 0; i < hand.length; i++) {
+    const candidateHand = hand.filter((_, idx) => idx !== i);
+    if (computeScoreFromArrangement(candidateHand) === 0) {
+      return true;
+    }
+  }
+  return false;
+}
