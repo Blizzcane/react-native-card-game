@@ -16,6 +16,9 @@ import { db } from "@/firebaseConfig";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import avatars from "@/utils/avatarLoader";
 
+// Static import for your GIF using a relative path.
+import ZZ2 from "../assets/images/ZZ2.gif";
+
 SplashScreen.preventAutoHideAsync();
 
 // Constants
@@ -33,7 +36,7 @@ const groupColors = [
 ];
 
 /* --- Static Image Imports --- */
-// Diamonds: images are named B1.png, B2.png, ..., B10.png, B12.png, B13.png, B14.png.
+// Diamonds
 const diamondImages = {
   A: require("@/assets/images/card-images/B1.png"),
   "2": require("@/assets/images/card-images/B2.png"),
@@ -50,7 +53,7 @@ const diamondImages = {
   K: require("@/assets/images/card-images/B14.png"),
 };
 
-// Clubs (Clovers): images are named G1.png, G2.png, ..., G10.png, G12.png, G13.png, G14.png.
+// Clubs
 const clubImages = {
   A: require("@/assets/images/card-images/G1.png"),
   "2": require("@/assets/images/card-images/G2.png"),
@@ -67,7 +70,7 @@ const clubImages = {
   K: require("@/assets/images/card-images/G14.png"),
 };
 
-// Hearts: images are named H1.png, H2.png, ..., H10.png, H12.png, H13.png, H14.png.
+// Hearts
 const heartImages = {
   A: require("@/assets/images/card-images/H1.png"),
   "2": require("@/assets/images/card-images/H2.png"),
@@ -84,7 +87,7 @@ const heartImages = {
   K: require("@/assets/images/card-images/H14.png"),
 };
 
-// Spades: images are named L1.png, L2.png, ..., L10.png, L12.png, L13.png, L14.png.
+// Spades
 const spadeImages = {
   A: require("@/assets/images/card-images/L1.png"),
   "2": require("@/assets/images/card-images/L2.png"),
@@ -123,7 +126,6 @@ function getCardValues(card) {
   return [parseInt(card.rank, 10)];
 }
 
-// Ace now counts as 11 for tallying score.
 function getCardScore(card) {
   if (card.rank === "A") return 11;
   if (card.rank === "J") return 12;
@@ -163,7 +165,6 @@ function isConsecutive(card1, card2) {
   return false;
 }
 
-// This function is used for validation.
 function isValidGroup(cards) {
   if (cards.length < 3) return false;
   const rank = cards[0].rank;
@@ -176,9 +177,6 @@ function isValidGroup(cards) {
   return true;
 }
 
-// Original computeGroups is still available for other purposes.
-// However, to highlight the optimal grouping (i.e. the one used for scoring),
-// we add a new helper that returns the non‑overlapping groups.
 function computeOptimalGrouping(hand) {
   const n = hand.length;
   const memo = new Array(n + 1).fill(null);
@@ -191,10 +189,8 @@ function computeOptimalGrouping(hand) {
       return 0;
     }
     if (memo[i] !== null) return memo[i];
-    // Option 1: Skip card at index i.
     let best = bestRemoval(i + 1);
     let bestGroups = memoGroups[i + 1] || [];
-    // Option 2: Try every contiguous segment starting at i (length ≥ 3).
     for (let j = i + 3; j <= n; j++) {
       const group = hand.slice(i, j);
       if (isValidGroup(group)) {
@@ -214,7 +210,6 @@ function computeOptimalGrouping(hand) {
   return memoGroups[0] || [];
 }
 
-// The original scoring function now uses our dynamic programming approach.
 function computeScoreFromArrangement(hand) {
   const totalScore = hand.reduce((acc, card) => acc + getCardScore(card), 0);
   const removal = bestRemovalWrapper(hand);
@@ -253,7 +248,6 @@ export default function GameScreen() {
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
 
-  // Fixed sizes.
   const cardSize = { width: 80, height: 110 };
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -274,7 +268,9 @@ export default function GameScreen() {
   const [rumpMode, setRumpMode] = useState(false);
   const [scoresUpdated, setScoresUpdated] = useState(false);
 
-  // Dealer and turn tracking.
+  // State for controlling the GIF overlay.
+  const [showGif, setShowGif] = useState(false);
+
   const [dealerIndex, setDealerIndex] = useState(0);
   const [startingPlayerIndex, setStartingPlayerIndex] = useState(0);
 
@@ -320,7 +316,6 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId, currentTurn, playerId, router]);
 
-  // Scoring & round-end effect.
   useEffect(() => {
     if (roundStatus === "waiting" && isHost && !scoresUpdated) {
       setScoresUpdated(true);
@@ -386,6 +381,10 @@ export default function GameScreen() {
     setScoresUpdated(false);
     setDealerIndex(newDealerIndex);
     setStartingPlayerIndex(newStartingIndex);
+
+    // Show the GIF overlay for 5 seconds
+    setShowGif(true);
+    setTimeout(() => setShowGif(false), 5000);
   };
 
   const drawCard = async (sourceKey) => {
@@ -457,7 +456,6 @@ export default function GameScreen() {
     setHasDrawnCard(false);
   };
 
-  // --- Highlighting: Use the optimal grouping computed for the arranged hand ---
   const optimalGroups = useMemo(
     () => computeOptimalGrouping(displayHand),
     [displayHand]
@@ -687,6 +685,16 @@ export default function GameScreen() {
           })}
         </View>
       </View>
+      
+      {/* GIF overlay for card dealing */}
+      {showGif && (
+        <View style={styles.gifOverlay}>
+          <Image 
+            source={ZZ2}
+            style={styles.gifImage}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -874,9 +882,24 @@ const styles = StyleSheet.create({
     height: "100%",
     resizeMode: "contain",
   },
+  gifOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "black",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 999,
+  },
+  gifImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "contain",
+  },
 });
 
-// A helper for rump mode highlighting.
 function isValidRumpUsingComputedGroups(hand) {
   if (hand.length !== 10) return false;
   for (let i = 0; i < hand.length; i++) {
