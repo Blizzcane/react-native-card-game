@@ -123,8 +123,9 @@ function getCardValues(card) {
   return [parseInt(card.rank, 10)];
 }
 
+// Ace now counts as 11 for tallying score.
 function getCardScore(card) {
-  if (card.rank === "A") return 1;
+  if (card.rank === "A") return 11;
   if (card.rank === "J") return 12;
   if (card.rank === "Q") return 13;
   if (card.rank === "K") return 14;
@@ -307,6 +308,9 @@ export default function GameScreen() {
     return () => unsubscribe();
   }, [roomId, currentTurn, playerId, router]);
 
+  // Scoring & round-end effect.
+  // When roundStatus is "waiting" (i.e. the round just ended) and the host hasn't yet updated scores,
+  // update scores. Additionally, if this was round 11, automatically set roundStatus to "gameOver".
   useEffect(() => {
     if (roundStatus === "waiting" && isHost && !scoresUpdated) {
       setScoresUpdated(true);
@@ -325,10 +329,16 @@ export default function GameScreen() {
         console.log(`Updating ${player.name}: prevScore: ${prevScore}, roundScore: ${roundScore}`);
         return { ...player, score: prevScore + roundScore };
       });
-      updateDoc(doc(db, "games", roomId), { players: updatedPlayers })
-        .catch((err) => console.error("Failed to update scores", err));
+      // If round 11 ended, automatically mark the game as over.
+      if (currentRound === 11) {
+        updateDoc(doc(db, "games", roomId), { players: updatedPlayers, roundStatus: "gameOver" })
+          .catch((err) => console.error("Failed to update scores", err));
+      } else {
+        updateDoc(doc(db, "games", roomId), { players: updatedPlayers })
+          .catch((err) => console.error("Failed to update scores", err));
+      }
     }
-  }, [roundStatus, isHost, scoresUpdated, players, allHands, roomId]);
+  }, [roundStatus, isHost, scoresUpdated, players, allHands, roomId, currentRound]);
 
   const initializeRound = async () => {
     if (!isHost) return;
@@ -336,11 +346,7 @@ export default function GameScreen() {
       Alert.alert("No players available to start the round.");
       return;
     }
-    if (currentRound >= 11) {
-      await updateDoc(doc(db, "games", roomId), { roundStatus: "gameOver" });
-      setRoundStatus("gameOver");
-      return;
-    }
+    // For rounds before 11, start a new round.
     const currentDealerIndex = dealerIndex;
     const newDealerIndex = (currentDealerIndex + 1) % players.length;
     const newStartingIndex = (newDealerIndex + 1) % players.length;
@@ -436,6 +442,11 @@ export default function GameScreen() {
       discardPile: [...discardPile, discardedCard],
       currentTurn: nextPlayerId,
     });
+    // After discarding, if the deck is empty (i.e. the next player cannot draw), end the round.
+    if (deck.length === 0) {
+      Alert.alert("Deck is empty. Ending round.");
+      await updateDoc(doc(db, "games", roomId), { roundStatus: "waiting" });
+    }
     setHasDrawnCard(false);
   };
 
