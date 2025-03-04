@@ -44,7 +44,7 @@ function GlowingBorder({ active, children }) {
       const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(glowOpacity, {
-            toValue: 0.5,
+            toValue: 0,
             duration: 500,
             useNativeDriver: false,
           }),
@@ -295,8 +295,8 @@ export default function GameScreen() {
   const scaleW = width / baseWidth;
   const scaleH = height / baseHeight;
   const scale = Math.min(scaleW, scaleH);
-  
-  // Dynamically scaled sizes for cards and other components
+
+  // Dynamically scaled sizes for cards (you can adjust these for larger cards)
   const cardWidth = 120 * scale;
   const cardHeight = 165 * scale;
 
@@ -620,6 +620,7 @@ export default function GameScreen() {
                     {player.name}
                   </Text>
                   <Image source={avatars[player.avatar]} style={styles.avatarImage(scale)} />
+                  {/* Scoreboard styles applied here */}
                   <View style={styles.scoreBorder(scale)}>
                     <Text style={styles.scoreText(scale)} numberOfLines={1} adjustsFontSizeToFit>
                       {String(player.score || 0).padStart(3, "0")}
@@ -1021,7 +1022,6 @@ const styles = {
         resizeMode: "contain",
       },
     }).gifImage,
-  // For consistency, we reuse validRump check function
 };
 
 function isValidRumpUsingComputedGroups(hand) {
