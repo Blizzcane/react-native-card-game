@@ -288,7 +288,7 @@ export default function GameScreen() {
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
 
-  const cardSize = { width: 80, height: 110 };
+  const cardSize = { width: 120, height: 165 };
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
@@ -834,14 +834,18 @@ const styles = StyleSheet.create({
   },
   deckColumn: { alignItems: "center" },
   deckCard: {
-    width: 80,
-    height: 110,
-    backgroundColor: "#444",
+    width: 120,
+    height: 165,
+    backgroundColor: "#c3c3c3",
     borderRadius: 5,
+    borderColor: "white",
+    borderWidth: 5,
     alignItems: "center",
     justifyContent: "center",
-    padding: 5,
+    padding: 0,
+    marginHorizontal: 5,
   },
+  
   disabledDeck: { backgroundColor: "#777", opacity: 0.6 },
   discardColumn: { alignItems: "center" },
   discardButton: {
