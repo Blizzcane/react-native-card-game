@@ -282,6 +282,45 @@ function computeRoundScore(hand) {
   return computeScoreFromArrangement(hand);
 }
 
+function validRumpAvailable(hand) {
+  if (hand.length !== 10) return false;
+  for (let i = 0; i < hand.length; i++) {
+    const candidateHand = hand.filter((_, idx) => idx !== i);
+    if (computeScoreFromArrangement(candidateHand) === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// --- RoundOverOverlay Component ---
+// This component fades in a message, holds it, and then fades out.
+function RoundOverOverlay({ message, onAnimationEnd, scale }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }).start(onAnimationEnd);
+      }, 2000);
+    });
+  }, [message]);
+
+  return (
+    <Animated.View style={[styles.roundOverOverlay(scale), { opacity }]}>
+      <Text style={styles.roundOverText(scale)}>{message}</Text>
+    </Animated.View>
+  );
+}
+
 // --- GameScreen Component ---
 export default function GameScreen() {
   const { colors } = useTheme();
@@ -319,6 +358,8 @@ export default function GameScreen() {
   const [showGif, setShowGif] = useState(false);
   const [dealerIndex, setDealerIndex] = useState(0);
   const [startingPlayerIndex, setStartingPlayerIndex] = useState(0);
+  // New state for the round over overlay message
+  const [roundOverMessage, setRoundOverMessage] = useState("");
 
   const isRoundActive = roundStatus === "started";
 
@@ -357,6 +398,10 @@ export default function GameScreen() {
 
         if (typeof data.showGif === "boolean") {
           setShowGif(data.showGif);
+        }
+        // Update the round over message if roundStatus is waiting and a message exists
+        if (data.roundStatus === "waiting" && data.roundOverMessage) {
+          setRoundOverMessage(data.roundOverMessage);
         }
       } else {
         Alert.alert("Game session not found!");
@@ -422,6 +467,7 @@ export default function GameScreen() {
       startingPlayerIndex: newStartingIndex,
       currentTurn: players[newStartingIndex]?.id,
       showGif: true,
+      roundOverMessage: "", // reset any previous message
     });
     const myHand = hands[playerId] || [];
     setPlayerHand(myHand);
@@ -501,9 +547,13 @@ export default function GameScreen() {
       discardPile: [...discardPile, discardedCard],
       currentTurn: nextPlayerId,
     });
+    // If deck is empty, update with a round over message.
     if (deck.length === 0) {
       Alert.alert("Deck is empty. Ending round.");
-      await updateDoc(doc(db, "games", roomId), { roundStatus: "waiting" });
+      await updateDoc(doc(db, "games", roomId), {
+        roundStatus: "waiting",
+        roundOverMessage: "Round Over!",
+      });
     }
     setHasDrawnCard(false);
   };
@@ -528,11 +578,16 @@ export default function GameScreen() {
         const currentPlayerIndex = players.findIndex((player) => player.id === playerId);
         const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
         const nextPlayerId = players[nextPlayerIndex]?.id;
+        const currentPlayer = players.find((p) => p.id === playerId);
+        const message = currentPlayer
+          ? `Round Over! ${currentPlayer.name} got Rump!`
+          : "Round Over!";
         updateDoc(doc(db, "games", roomId), {
           [`hands.${playerId}`]: newHand,
           discardPile: [...discardPile, candidateCard],
           roundStatus: "waiting",
           currentTurn: nextPlayerId,
+          roundOverMessage: message,
         }).catch((err) => console.error("Failed to update rump discard", err));
         setRumpMode(false);
       } else {
@@ -737,20 +792,17 @@ export default function GameScreen() {
           />
         </View>
       )}
+      {/* Render the round over overlay if there is a message */}
+      {roundOverMessage !== "" && (
+        <RoundOverOverlay
+          message={roundOverMessage}
+          scale={scale}
+          onAnimationEnd={() => setRoundOverMessage("")}
+        />
+      )}
     </SafeAreaView>
   );
 }
-
-const validRumpAvailable = (hand) => {
-  if (hand.length !== 10) return false;
-  for (let i = 0; i < hand.length; i++) {
-    const candidateHand = hand.filter((_, idx) => idx !== i);
-    if (computeScoreFromArrangement(candidateHand) === 0) {
-      return true;
-    }
-  }
-  return false;
-};
 
 // Dynamic styles function taking scale as an argument
 const styles = {
@@ -1025,6 +1077,30 @@ const styles = {
         resizeMode: "contain",
       },
     }).gifImage,
+  roundOverOverlay: (scale) =>
+    StyleSheet.create({
+      roundOverOverlay: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0,0,0,0.8)",
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 1000,
+      },
+    }).roundOverOverlay,
+  roundOverText: (scale) =>
+    StyleSheet.create({
+      roundOverText: {
+        fontSize: 28 * scale,
+        fontFamily: "PressStart2P",
+        color: "#fff",
+        textAlign: "center",
+        paddingHorizontal: 20 * scale,
+      },
+    }).roundOverText,
 };
 
 function isValidRumpUsingComputedGroups(hand) {
