@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler'; // Must be at the very top
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -13,6 +13,7 @@ import { useTheme } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { LinearGradient } from 'expo-linear-gradient';
+import HowToPlayModal from '../components/HowToPlayModal';
 
 // Prevent the splash screen from auto hiding
 SplashScreen.preventAutoHideAsync();
@@ -24,20 +25,23 @@ export default function HomeScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { colors } = useTheme();
+  
+  const [modalVisible, setModalVisible] = useState(false);
 
   const [fontsLoaded] = useFonts({
     PressStart2P: require('../assets/fonts/PressStart2P-Regular.ttf'),
   });
 
-  // Animation refs for header and button
+  // Animation refs for header, first button, and second button
   const headerAnim = useRef(new Animated.Value(0)).current;
   const buttonAnim = useRef(new Animated.Value(0)).current;
+  const secondButtonAnim = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync();
-      // Animate header and button: fade in and slide up
+      // Animate header, first button, and second button with staggered timing
       Animated.stagger(300, [
         Animated.timing(headerAnim, {
           toValue: 1,
@@ -49,9 +53,14 @@ export default function HomeScreen() {
           duration: 800,
           useNativeDriver: true,
         }),
+        Animated.timing(secondButtonAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
       ]).start();
     }
-  }, [fontsLoaded, headerAnim, buttonAnim]);
+  }, [fontsLoaded, headerAnim, buttonAnim, secondButtonAnim]);
 
   if (!fontsLoaded) {
     return null;
@@ -60,7 +69,7 @@ export default function HomeScreen() {
   // Button press animation handlers
   const onPressIn = () => {
     Animated.spring(buttonScale, {
-      toValue: 0.9, // more noticeable scale down
+      toValue: 0.9,
       useNativeDriver: true,
     }).start();
   };
@@ -123,10 +132,39 @@ export default function HomeScreen() {
         >
           <Text style={styles.buttonText}>{t("Enter Lobby")}</Text>
         </AnimatedTouchable>
+        {/* New button for "How to Play" with delayed animation */}
+        <AnimatedTouchable
+          style={[
+            styles.button,
+            {
+              opacity: secondButtonAnim,
+              transform: [
+                {
+                  translateY: secondButtonAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [20, 0],
+                  }),
+                },
+                { scale: buttonScale },
+              ],
+              marginTop: 20,
+            },
+          ]}
+          onPress={() => setModalVisible(true)}
+          onPressIn={onPressIn}
+          onPressOut={onPressOut}
+        >
+          <Text style={styles.buttonText}>{t("How to Play")}</Text>
+        </AnimatedTouchable>
         {/* Persistent text at the bottom right */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>Crafted with Passion by Vasil</Text>
         </View>
+        {/* HowToPlay modal component */}
+        <HowToPlayModal 
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+        />
       </View>
     </LinearGradient>
   );
@@ -142,7 +180,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     position: 'relative', // Allow absolute positioning for footer
   },
-  // Increased fontSize for a bigger title
   header: { 
     fontSize: 32, 
     fontFamily: 'PressStart2P', 
@@ -175,6 +212,6 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 10,
     fontFamily: 'PressStart2P',
-    color: '#888',
+    color: '#c3c3c3',
   },
 });
