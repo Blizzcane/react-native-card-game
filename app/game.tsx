@@ -16,12 +16,12 @@ import * as SplashScreen from "expo-splash-screen";
 import { db } from "@/firebaseConfig";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import avatars from "@/utils/avatarLoader";
-import MusicPlayer from "../components/MusicPlayer"; // Import the MusicPlayer component
+import MusicPlayer from "../components/MusicPlayer";
 import ZZ2 from "../assets/images/ZZ2.gif";
 
 SplashScreen.preventAutoHideAsync();
 
-// Constants
+// Constants for card/suit values and deck generation
 const suitSymbols = { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" };
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
@@ -36,7 +36,7 @@ const groupColors = [
 ];
 
 // --- GlowingBorder Component ---
-function GlowingBorder({ active, children }: { active: boolean; children: React.ReactNode }) {
+function GlowingBorder({ active, children }) {
   const glowOpacity = useRef(new Animated.Value(active ? 1 : 0)).current;
 
   useEffect(() => {
@@ -84,7 +84,7 @@ function GlowingBorder({ active, children }: { active: boolean; children: React.
 }
 
 // --- Card Images and Helper Functions ---
-const diamondImages: Record<string, any> = {
+const diamondImages = {
   A: require("@/assets/images/card-images/B1.png"),
   "2": require("@/assets/images/card-images/B2.png"),
   "3": require("@/assets/images/card-images/B3.png"),
@@ -100,7 +100,7 @@ const diamondImages: Record<string, any> = {
   K: require("@/assets/images/card-images/B14.png"),
 };
 
-const clubImages: Record<string, any> = {
+const clubImages = {
   A: require("@/assets/images/card-images/G1.png"),
   "2": require("@/assets/images/card-images/G2.png"),
   "3": require("@/assets/images/card-images/G3.png"),
@@ -116,7 +116,7 @@ const clubImages: Record<string, any> = {
   K: require("@/assets/images/card-images/G14.png"),
 };
 
-const heartImages: Record<string, any> = {
+const heartImages = {
   A: require("@/assets/images/card-images/H1.png"),
   "2": require("@/assets/images/card-images/H2.png"),
   "3": require("@/assets/images/card-images/H3.png"),
@@ -132,7 +132,7 @@ const heartImages: Record<string, any> = {
   K: require("@/assets/images/card-images/H14.png"),
 };
 
-const spadeImages: Record<string, any> = {
+const spadeImages = {
   A: require("@/assets/images/card-images/L1.png"),
   "2": require("@/assets/images/card-images/L2.png"),
   "3": require("@/assets/images/card-images/L3.png"),
@@ -155,11 +155,11 @@ const cardImages = {
   spades: spadeImages,
 };
 
-function getCardImage(card: { suit: string; rank: string }) {
+function getCardImage(card) {
   return cardImages[card.suit][card.rank];
 }
 
-function getCardValues(card: { rank: string }) {
+function getCardValues(card) {
   if (card.rank === "A") return [1, 11];
   if (card.rank === "J") return [12];
   if (card.rank === "Q") return [13];
@@ -167,7 +167,7 @@ function getCardValues(card: { rank: string }) {
   return [parseInt(card.rank, 10)];
 }
 
-function getCardScore(card: { rank: string }) {
+function getCardScore(card) {
   if (card.rank === "A") return 11;
   if (card.rank === "J") return 12;
   if (card.rank === "Q") return 13;
@@ -176,7 +176,7 @@ function getCardScore(card: { rank: string }) {
 }
 
 function generateDeck() {
-  const deck: Array<{ suit: string; rank: string }> = [];
+  const deck = [];
   for (const suit of SUITS) {
     for (const rank of RANKS) {
       deck.push({ suit, rank });
@@ -185,7 +185,7 @@ function generateDeck() {
   return deck;
 }
 
-function shuffleArray(array: any[]) {
+function shuffleArray(array) {
   const arr = array.slice();
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -194,7 +194,7 @@ function shuffleArray(array: any[]) {
   return arr;
 }
 
-function isConsecutive(card1: { suit: string; rank: string }, card2: { suit: string; rank: string }) {
+function isConsecutive(card1, card2) {
   if (card1.suit !== card2.suit) return false;
   const vals1 = getCardValues(card1);
   const vals2 = getCardValues(card2);
@@ -206,7 +206,7 @@ function isConsecutive(card1: { suit: string; rank: string }, card2: { suit: str
   return false;
 }
 
-function isValidGroup(cards: Array<{ suit: string; rank: string }>) {
+function isValidGroup(cards) {
   if (cards.length < 3) return false;
   const rank = cards[0].rank;
   if (cards.every((c) => c.rank === rank)) return true;
@@ -218,12 +218,12 @@ function isValidGroup(cards: Array<{ suit: string; rank: string }>) {
   return true;
 }
 
-function computeOptimalGrouping(hand: Array<{ suit: string; rank: string }>) {
+function computeOptimalGrouping(hand) {
   const n = hand.length;
   const memo = new Array(n + 1).fill(null);
   const memoGroups = new Array(n + 1).fill(null);
 
-  function bestRemoval(i: number): number {
+  function bestRemoval(i) {
     if (i >= n) {
       memo[i] = 0;
       memoGroups[i] = [];
@@ -251,11 +251,11 @@ function computeOptimalGrouping(hand: Array<{ suit: string; rank: string }>) {
   return memoGroups[0] || [];
 }
 
-function bestRemovalWrapper(hand: Array<{ suit: string; rank: string }>) {
+function bestRemovalWrapper(hand) {
   const n = hand.length;
   const memo = new Array(n + 1).fill(null);
 
-  function bestRemoval(i: number): number {
+  function bestRemoval(i) {
     if (i >= n) return 0;
     if (memo[i] !== null) return memo[i];
     let best = bestRemoval(i + 1);
@@ -272,13 +272,13 @@ function bestRemovalWrapper(hand: Array<{ suit: string; rank: string }>) {
   return bestRemoval(0);
 }
 
-function computeScoreFromArrangement(hand: Array<{ suit: string; rank: string }>) {
+function computeScoreFromArrangement(hand) {
   const totalScore = hand.reduce((acc, card) => acc + getCardScore(card), 0);
   const removal = bestRemovalWrapper(hand);
   return totalScore - removal;
 }
 
-function computeRoundScore(hand: Array<{ suit: string; rank: string }>) {
+function computeRoundScore(hand) {
   return computeScoreFromArrangement(hand);
 }
 
@@ -287,23 +287,32 @@ export default function GameScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const { roomId, playerId } = useLocalSearchParams();
-
-  const cardSize = { width: 120, height: 165 };
   const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
 
-  const [deck, setDeck] = useState<any[]>([]);
-  const [discardPile, setDiscardPile] = useState<any[]>([]);
-  const [playerHand, setPlayerHand] = useState<any[]>([]);
-  const [displayHand, setDisplayHand] = useState<any[]>([]);
-  const [allHands, setAllHands] = useState<any>({});
+  // Define base dimensions (for 720p: 1280x720) and compute a scaling factor
+  const baseWidth = 1280;
+  const baseHeight = 720;
+  const scaleW = width / baseWidth;
+  const scaleH = height / baseHeight;
+  const scale = Math.min(scaleW, scaleH);
+  
+  // Dynamically scaled sizes for cards and other components
+  const cardWidth = 120 * scale;
+  const cardHeight = 165 * scale;
+
+  const isLandscape = width > height;
+  const [deck, setDeck] = useState([]);
+  const [discardPile, setDiscardPile] = useState([]);
+  const [playerHand, setPlayerHand] = useState([]);
+  const [displayHand, setDisplayHand] = useState([]);
+  const [allHands, setAllHands] = useState({});
   const [currentRound, setCurrentRound] = useState(1);
   const [roundStatus, setRoundStatus] = useState("waiting");
-  const [players, setPlayers] = useState<any[]>([]);
-  const [currentTurn, setCurrentTurn] = useState<any>(null);
+  const [players, setPlayers] = useState([]);
+  const [currentTurn, setCurrentTurn] = useState(null);
   const [isHost, setIsHost] = useState(false);
   const [hasDrawnCard, setHasDrawnCard] = useState(false);
-  const [selectedCardIndex, setSelectedCardIndex] = useState<number | null>(null);
+  const [selectedCardIndex, setSelectedCardIndex] = useState(null);
   const [discardMode, setDiscardMode] = useState(false);
   const [rumpMode, setRumpMode] = useState(false);
   const [scoresUpdated, setScoresUpdated] = useState(false);
@@ -394,11 +403,11 @@ export default function GameScreen() {
     const newDealerIndex = (currentDealerIndex + 1) % players.length;
     const newStartingIndex = (newDealerIndex + 1) % players.length;
     const newDeck = shuffleArray(generateDeck());
-    const hands: any = {};
+    const hands = {};
     players.forEach((player) => {
       hands[player.id] = newDeck.splice(0, 9);
     });
-    let newDiscardPile: any[] = [];
+    let newDiscardPile = [];
     if (players.length < 4) {
       const topCard = newDeck.shift();
       newDiscardPile.push(topCard);
@@ -430,7 +439,7 @@ export default function GameScreen() {
     }, 5000);
   };
 
-  const drawCard = async (sourceKey: "deck" | "discardPile") => {
+  const drawCard = async (sourceKey) => {
     if (!isRoundActive) return;
     const source = sourceKey === "deck" ? deck : discardPile;
     if (playerId !== currentTurn) {
@@ -464,7 +473,7 @@ export default function GameScreen() {
   const drawFromDeck = useCallback(() => drawCard("deck"), [deck, playerHand, hasDrawnCard, currentTurn, roundStatus]);
   const drawFromDiscard = useCallback(() => drawCard("discardPile"), [discardPile, playerHand, hasDrawnCard, currentTurn, roundStatus]);
 
-  const discardCard = async (index: number) => {
+  const discardCard = async (index) => {
     if (!isRoundActive) return;
     if (playerId !== currentTurn) {
       Alert.alert("Not your turn!");
@@ -501,16 +510,16 @@ export default function GameScreen() {
 
   const optimalGroups = useMemo(() => computeOptimalGrouping(displayHand), [displayHand]);
   const highlightMapping = useMemo(() => {
-    const mapping: any = {};
+    const mapping = {};
     optimalGroups.forEach((group, i) => {
-      group.forEach((index: number) => {
+      group.forEach((index) => {
         mapping[index] = groupColors[i % groupColors.length];
       });
     });
     return mapping;
   }, [optimalGroups]);
 
-  const handleCardPress = useCallback((index: number) => {
+  const handleCardPress = useCallback((index) => {
     if (!isRoundActive) return;
     if (rumpMode) {
       const candidateCard = displayHand[index];
@@ -559,9 +568,9 @@ export default function GameScreen() {
   const rumpButtonStyle = useMemo(() => {
     if (!rumpMode) return { backgroundColor: "#ccc" };
     return validRumpAvailable(displayHand)
-      ? { backgroundColor: "#0f0", borderWidth: 3, borderColor: "gold" }
+      ? { backgroundColor: "#0f0", borderWidth: 3 * scale, borderColor: "gold" }
       : { backgroundColor: "#a00" };
-  }, [rumpMode, displayHand]);
+  }, [rumpMode, displayHand, scale]);
 
   const winner = useMemo(() => {
     if (roundStatus !== "gameOver") return null;
@@ -570,25 +579,25 @@ export default function GameScreen() {
   }, [roundStatus, players]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container(scale), { backgroundColor: colors.background }]}>
       {/* Render MusicPlayer. Its absolute positioning ensures it won't interfere with the UI */}
       <MusicPlayer hideButton={showGif} />
-      <View style={styles.content}>
+      <View style={styles.content(scale)}>
         {isHost && roundStatus === "waiting" && (
-          <TouchableOpacity style={styles.startRoundButton} onPress={initializeRound}>
-            <Text style={styles.startRoundText}>Start Round</Text>
+          <TouchableOpacity style={styles.startRoundButton(scale)} onPress={initializeRound}>
+            <Text style={styles.startRoundText(scale)}>Start Round</Text>
           </TouchableOpacity>
         )}
-        <Text style={[styles.header, { color: colors.text }]}>
+        <Text style={[styles.header(scale), { color: colors.text }]}>
           {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
         </Text>
         {roundStatus === "gameOver" && winner && (
-          <Text style={[styles.winnerText, { color: colors.text }]}>
+          <Text style={[styles.winnerText(scale), { color: colors.text }]}>
             Winner: {winner.name} with {String(winner.score || 0).padStart(3, "0")}
           </Text>
         )}
-        <View style={[styles.infoArea, { flexDirection: isLandscape ? "row" : "column" }]}>
-          <View style={styles.avatarSection}>
+        <View style={[styles.infoArea(scale), { flexDirection: isLandscape ? "row" : "column" }]}>
+          <View style={styles.avatarSection(scale)}>
             {players.map((player) => {
               const isCurrent = player.id === currentTurn;
               const shouldGlow = isCurrent && (player.id === playerId ? !hasDrawnCard : false);
@@ -596,23 +605,23 @@ export default function GameScreen() {
                 <View
                   key={player.id}
                   style={[
-                    styles.avatarContainer,
-                    isCurrent && styles.currentTurnHighlight,
+                    styles.avatarContainer(scale),
+                    isCurrent && styles.currentTurnHighlight(scale),
                   ]}
                 >
                   <Text
                     style={[
-                      styles.avatarName,
-                      isCurrent && styles.currentTurnAvatarName,
+                      styles.avatarName(scale),
+                      isCurrent && styles.currentTurnAvatarName(scale),
                     ]}
                     numberOfLines={1}
                     adjustsFontSizeToFit
                   >
                     {player.name}
                   </Text>
-                  <Image source={avatars[player.avatar]} style={styles.avatarImage} />
-                  <View style={styles.scoreBorder}>
-                    <Text style={styles.scoreText} numberOfLines={1} adjustsFontSizeToFit>
+                  <Image source={avatars[player.avatar]} style={styles.avatarImage(scale)} />
+                  <View style={styles.scoreBorder(scale)}>
+                    <Text style={styles.scoreText(scale)} numberOfLines={1} adjustsFontSizeToFit>
                       {String(player.score || 0).padStart(3, "0")}
                     </Text>
                   </View>
@@ -627,20 +636,20 @@ export default function GameScreen() {
               );
             })}
           </View>
-          <View style={styles.deckDiscardContainer}>
-            <View style={styles.deckColumn}>
+          <View style={styles.deckDiscardContainer(scale)}>
+            <View style={styles.deckColumn(scale)}>
               <TouchableOpacity
                 onPress={drawFromDeck}
                 style={[
-                  styles.deckCard,
-                  (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                  styles.deckCard(scale),
+                  (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck(scale),
                 ]}
                 disabled={!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS}
               >
-                <Text style={styles.cardText}>Deck ({deck.length})</Text>
+                <Text style={styles.cardText(scale)}>Deck ({deck.length})</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.rumpButton, !canToggleRump && styles.disabledButton, rumpButtonStyle]}
+                style={[styles.rumpButton(scale), !canToggleRump && styles.disabledButton(scale), rumpButtonStyle]}
                 onPress={() => {
                   if (!canToggleRump) {
                     Alert.alert("You cannot toggle Rump mode right now!");
@@ -651,30 +660,30 @@ export default function GameScreen() {
                 }}
                 disabled={!canToggleRump}
               >
-                <Text style={[styles.rumpButtonText, !canToggleRump && styles.disabledButton, rumpMode ? { color: "#fff" } : { color: "#000" }]}>
+                <Text style={[styles.rumpButtonText(scale), !canToggleRump && styles.disabledButton(scale), rumpMode ? { color: "#fff" } : { color: "#000" }]}>
                   Rump
                 </Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.discardColumn}>
+            <View style={styles.discardColumn(scale)}>
               <TouchableOpacity
                 onPress={drawFromDiscard}
                 style={[
-                  styles.deckCard,
-                  (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck,
+                  styles.deckCard(scale),
+                  (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck(scale),
                 ]}
                 disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
               >
                 {discardPile.length > 0 ? (
                   <Image source={getCardImage(discardPile[discardPile.length - 1])} style={styles.cardImage} />
                 ) : (
-                  <Text style={styles.cardText}>Empty Discard</Text>
+                  <Text style={styles.cardText(scale)}>Empty Discard</Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.discardButton,
-                  !canToggleDiscard && styles.disabledButton,
+                  styles.discardButton(scale),
+                  !canToggleDiscard && styles.disabledButton(scale),
                   discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
                 ]}
                 onPress={() => {
@@ -687,25 +696,25 @@ export default function GameScreen() {
                 }}
                 disabled={!canToggleDiscard}
               >
-                <Text style={[styles.discardButtonText, !canToggleDiscard && styles.disabledButton, discardMode ? { color: "#fff" } : { color: "#000" }]}>
+                <Text style={[styles.discardButtonText(scale), !canToggleDiscard && styles.disabledButton(scale), discardMode ? { color: "#fff" } : { color: "#000" }]}>
                   Discard
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
-        <View style={styles.handContainer}>
+        <View style={styles.handContainer(scale)}>
           {displayHand.map((card, index) => {
             const comboStyle = highlightMapping[index]
-              ? { borderColor: highlightMapping[index], borderWidth: 3 }
+              ? { borderColor: highlightMapping[index], borderWidth: 3 * scale }
               : null;
             return (
               <TouchableOpacity
                 key={`${card.rank}-${card.suit}-${index}`}
                 style={[
-                  styles.card,
-                  cardSize,
-                  selectedCardIndex === index && styles.selectedCard,
+                  styles.card(scale),
+                  { width: cardWidth, height: cardHeight },
+                  selectedCardIndex === index && styles.selectedCard(scale),
                   comboStyle,
                 ]}
                 onPress={() => handleCardPress(index)}
@@ -717,10 +726,10 @@ export default function GameScreen() {
         </View>
       </View>
       {showGif && (
-        <View style={styles.gifOverlay}>
+        <View style={styles.gifOverlay(scale)}>
           <Image 
             source={ZZ2}
-            style={styles.gifImage}
+            style={styles.gifImage(scale)}
           />
         </View>
       )}
@@ -728,7 +737,7 @@ export default function GameScreen() {
   );
 }
 
-const validRumpAvailable = (hand: any[]) => {
+const validRumpAvailable = (hand) => {
   if (hand.length !== 10) return false;
   for (let i = 0; i < hand.length; i++) {
     const candidateHand = hand.filter((_, idx) => idx !== i);
@@ -739,201 +748,283 @@ const validRumpAvailable = (hand: any[]) => {
   return false;
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 10 },
-  content: {
-    flex: 1,
-    justifyContent: "flex-start",
-    alignItems: "center",
-    paddingVertical: 20,
-  },
-  startRoundButton: {
-    padding: 10,
-    borderRadius: 3,
-    backgroundColor: "#c3c3c3",
-    alignSelf: "center",
-    borderWidth: 4,
-    borderLeftColor: "#fff",
-    borderTopColor: "#fff",
-    borderRightColor: "#404040",
-    borderBottomColor: "#404040",
-    marginBottom: 10,
-  },
-  startRoundText: { color: "#fff", fontFamily: "PressStart2P", fontSize: 14 },
-  header: {
-    fontSize: 20,
-    fontFamily: "PressStart2P",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  winnerText: { fontFamily: "PressStart2P", fontSize: 16, marginBottom: 10 },
-  infoArea: {
-    flex: 1,
-    justifyContent: "space-evenly",
-    alignItems: "center",
-  },
-  avatarSection: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center", 
-    marginHorizontal: 20,
-  },
-  avatarContainer: {
-    alignItems: "center",
-    padding: 5,
-    backgroundColor: "#c3c3c3",
-    borderWidth: 4,
-    borderLeftColor: "#fff",
-    borderTopColor: "#fff",
-    borderRightColor: "#404040",
-    borderBottomColor: "#404040",
-    marginHorizontal: 5,
-  },
-  currentTurnHighlight: { backgroundColor: "#9e9572" },
-  avatarName: {
-    fontFamily: "PressStart2P",
-    fontSize: 10,
-    color: "#000",
-    flexShrink: 1,
-    minHeight: 15,
-    textAlign: "center",
-  },
-  currentTurnAvatarName: { color: "yellow" },
-  avatarImage: {
-    width: 80,
-    height: 80,
-    borderWidth: 4,
-    borderLeftColor: "#404040",
-    borderTopColor: "#404040",
-    borderRightColor: "#fff",
-    borderBottomColor: "#fff",
-  },
-  scoreText: {
-    fontFamily: "PressStart2P",
-    fontSize: 10,
-    color: "white",
-    textAlign: "center",
-  },
-  scoreBorder: {
-    borderWidth: 3,
-    backgroundColor: "black",
-    borderLeftColor: "#404040",
-    borderTopColor: "#404040",
-    borderRightColor: "#fff",
-    borderBottomColor: "#fff",
-    paddingHorizontal: 3,
-    paddingVertical: 2,
-    marginTop: 5,
-    alignSelf: "center",
-  },
-  deckDiscardContainer: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "space-evenly",
-    marginVertical: 10,
-  },
-  deckColumn: { alignItems: "center" },
-  deckCard: {
-    width: 120,
-    height: 165,
-    backgroundColor: "#c3c3c3",
-    borderRadius: 5,
-    borderColor: "white",
-    borderWidth: 5,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 0,
-    marginHorizontal: 5,
-  },
-  
-  disabledDeck: { backgroundColor: "#777", opacity: 0.6 },
-  discardColumn: { alignItems: "center" },
-  discardButton: {
-    padding: 10,
-    marginTop: 10,
-    borderRadius: 3,
-    borderWidth: 4,
-    borderLeftColor: "#fff",
-    borderTopColor: "#fff",
-    borderRightColor: "#404040",
-    borderBottomColor: "#404040",
-  },
-  discardButtonText: {
-    color: "#000",
-    fontFamily: "PressStart2P",
-    fontSize: 12,
-  },
-  disabledButton: { opacity: 0.5 },
-  rumpButton: {
-    padding: 10,
-    marginTop: 10,
-    borderRadius: 3,
-    borderWidth: 4,
-    borderLeftColor: "#fff",
-    borderTopColor: "#fff",
-    borderRightColor: "#404040",
-    borderBottomColor: "#404040",
-  },
-  rumpButtonText: {
-    color: "#000",
-    fontFamily: "PressStart2P",
-    fontSize: 12,
-    textAlign: "center",
-  },
-  handContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 10,
-    backgroundColor: "#c3c3c3",
-    borderWidth: 4,
-    borderLeftColor: "#fff",
-    borderTopColor: "#fff",
-    borderRightColor: "#404040",
-    borderBottomColor: "#404040",
-    borderRadius: 3,
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderColor: "#000",
-    borderWidth: 1,
-    borderRadius: 5,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 5,
-    margin: 5,
-  },
-  selectedCard: {
-    backgroundColor: "#ffffd0",
-    borderColor: "#ff8800",
-    borderWidth: 2,
-  },
-  cardText: { fontFamily: "PressStart2P", fontSize: 12, textAlign: "center" },
-  cardImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
-  },
-  gifOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "black",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 999,
-  },
-  gifImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
-  },
-});
+// Dynamic styles function taking scale as an argument
+const styles = {
+  container: (scale) =>
+    StyleSheet.create({
+      container: { flex: 1, padding: 10 * scale },
+    }).container,
+  content: (scale) =>
+    StyleSheet.create({
+      content: {
+        flex: 1,
+        justifyContent: "flex-start",
+        alignItems: "center",
+        paddingVertical: 20 * scale,
+      },
+    }).content,
+  startRoundButton: (scale) =>
+    StyleSheet.create({
+      startRoundButton: {
+        padding: 10 * scale,
+        borderRadius: 3 * scale,
+        backgroundColor: "#c3c3c3",
+        alignSelf: "center",
+        borderWidth: 4 * scale,
+        borderLeftColor: "#fff",
+        borderTopColor: "#fff",
+        borderRightColor: "#404040",
+        borderBottomColor: "#404040",
+        marginBottom: 10 * scale,
+      },
+    }).startRoundButton,
+  startRoundText: (scale) =>
+    StyleSheet.create({
+      startRoundText: { color: "#fff", fontFamily: "PressStart2P", fontSize: 14 * scale },
+    }).startRoundText,
+  header: (scale) =>
+    StyleSheet.create({
+      header: {
+        fontSize: 20 * scale,
+        fontFamily: "PressStart2P",
+        textAlign: "center",
+        marginBottom: 10 * scale,
+      },
+    }).header,
+  winnerText: (scale) =>
+    StyleSheet.create({
+      winnerText: { fontFamily: "PressStart2P", fontSize: 16 * scale, marginBottom: 10 * scale },
+    }).winnerText,
+  infoArea: (scale) =>
+    StyleSheet.create({
+      infoArea: { flex: 1, justifyContent: "space-evenly", alignItems: "center" },
+    }).infoArea,
+  avatarSection: (scale) =>
+    StyleSheet.create({
+      avatarSection: { flex: 1, flexDirection: "row", justifyContent: "center", marginHorizontal: 20 * scale },
+    }).avatarSection,
+  avatarContainer: (scale) =>
+    StyleSheet.create({
+      avatarContainer: {
+        alignItems: "center",
+        padding: 5 * scale,
+        backgroundColor: "#c3c3c3",
+        borderWidth: 4 * scale,
+        borderLeftColor: "#fff",
+        borderTopColor: "#fff",
+        borderRightColor: "#404040",
+        borderBottomColor: "#404040",
+        marginHorizontal: 5 * scale,
+      },
+    }).avatarContainer,
+  currentTurnHighlight: (scale) =>
+    StyleSheet.create({
+      currentTurnHighlight: { backgroundColor: "#9e9572" },
+    }).currentTurnHighlight,
+  avatarName: (scale) =>
+    StyleSheet.create({
+      avatarName: {
+        fontFamily: "PressStart2P",
+        fontSize: 10 * scale,
+        color: "#000",
+        flexShrink: 1,
+        minHeight: 15 * scale,
+        textAlign: "center",
+      },
+    }).avatarName,
+  currentTurnAvatarName: (scale) =>
+    StyleSheet.create({
+      currentTurnAvatarName: { color: "yellow" },
+    }).currentTurnAvatarName,
+  avatarImage: (scale) =>
+    StyleSheet.create({
+      avatarImage: {
+        width: 80 * scale,
+        height: 80 * scale,
+        borderWidth: 4 * scale,
+        borderLeftColor: "#404040",
+        borderTopColor: "#404040",
+        borderRightColor: "#fff",
+        borderBottomColor: "#fff",
+      },
+    }).avatarImage,
+  scoreText: (scale) =>
+    StyleSheet.create({
+      scoreText: {
+        fontFamily: "PressStart2P",
+        fontSize: 10 * scale,
+        color: "white",
+        textAlign: "center",
+      },
+    }).scoreText,
+  scoreBorder: (scale) =>
+    StyleSheet.create({
+      scoreBorder: {
+        borderWidth: 3 * scale,
+        backgroundColor: "black",
+        borderLeftColor: "#404040",
+        borderTopColor: "#404040",
+        borderRightColor: "#fff",
+        borderBottomColor: "#fff",
+        paddingHorizontal: 3 * scale,
+        paddingVertical: 2 * scale,
+        marginTop: 5 * scale,
+        alignSelf: "center",
+      },
+    }).scoreBorder,
+  deckDiscardContainer: (scale) =>
+    StyleSheet.create({
+      deckDiscardContainer: { flex: 1, flexDirection: "row", justifyContent: "space-evenly", marginVertical: 10 * scale },
+    }).deckDiscardContainer,
+  deckColumn: (scale) =>
+    StyleSheet.create({
+      deckColumn: { alignItems: "center" },
+    }).deckColumn,
+  deckCard: (scale) =>
+    StyleSheet.create({
+      deckCard: {
+        width: 120 * scale,
+        height: 165 * scale,
+        backgroundColor: "#c3c3c3",
+        borderRadius: 5 * scale,
+        borderColor: "white",
+        borderWidth: 5 * scale,
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        marginHorizontal: 5 * scale,
+      },
+    }).deckCard,
+  disabledDeck: (scale) =>
+    StyleSheet.create({
+      disabledDeck: { backgroundColor: "#777", opacity: 0.6 },
+    }).disabledDeck,
+  discardColumn: (scale) =>
+    StyleSheet.create({
+      discardColumn: { alignItems: "center" },
+    }).discardColumn,
+  discardButton: (scale) =>
+    StyleSheet.create({
+      discardButton: {
+        padding: 10 * scale,
+        marginTop: 10 * scale,
+        borderRadius: 3 * scale,
+        borderWidth: 4 * scale,
+        borderLeftColor: "#fff",
+        borderTopColor: "#fff",
+        borderRightColor: "#404040",
+        borderBottomColor: "#404040",
+      },
+    }).discardButton,
+  discardButtonText: (scale) =>
+    StyleSheet.create({
+      discardButtonText: {
+        color: "#000",
+        fontFamily: "PressStart2P",
+        fontSize: 12 * scale,
+      },
+    }).discardButtonText,
+  disabledButton: (scale) =>
+    StyleSheet.create({
+      disabledButton: { opacity: 0.5 },
+    }).disabledButton,
+  rumpButton: (scale) =>
+    StyleSheet.create({
+      rumpButton: {
+        padding: 10 * scale,
+        marginTop: 10 * scale,
+        borderRadius: 3 * scale,
+        borderWidth: 4 * scale,
+        borderLeftColor: "#fff",
+        borderTopColor: "#fff",
+        borderRightColor: "#404040",
+        borderBottomColor: "#404040",
+      },
+    }).rumpButton,
+  rumpButtonText: (scale) =>
+    StyleSheet.create({
+      rumpButtonText: {
+        color: "#000",
+        fontFamily: "PressStart2P",
+        fontSize: 12 * scale,
+        textAlign: "center",
+      },
+    }).rumpButtonText,
+  handContainer: (scale) =>
+    StyleSheet.create({
+      handContainer: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 10 * scale,
+        backgroundColor: "#c3c3c3",
+        borderWidth: 4 * scale,
+        borderLeftColor: "#fff",
+        borderTopColor: "#fff",
+        borderRightColor: "#404040",
+        borderBottomColor: "#404040",
+        borderRadius: 3 * scale,
+      },
+    }).handContainer,
+  card: (scale) =>
+    StyleSheet.create({
+      card: {
+        backgroundColor: "#fff",
+        borderColor: "#000",
+        borderWidth: 1 * scale,
+        borderRadius: 5 * scale,
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 5 * scale,
+        margin: 5 * scale,
+      },
+    }).card,
+  selectedCard: (scale) =>
+    StyleSheet.create({
+      selectedCard: {
+        backgroundColor: "#ffffd0",
+        borderColor: "#ff8800",
+        borderWidth: 2 * scale,
+      },
+    }).selectedCard,
+  cardText: (scale) =>
+    StyleSheet.create({
+      cardText: { fontFamily: "PressStart2P", fontSize: 12 * scale, textAlign: "center" },
+    }).cardText,
+  cardImage: StyleSheet.create({
+    cardImage: {
+      width: "100%",
+      height: "100%",
+      resizeMode: "contain",
+    },
+  }).cardImage,
+  gifOverlay: (scale) =>
+    StyleSheet.create({
+      gifOverlay: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "black",
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 999,
+      },
+    }).gifOverlay,
+  gifImage: (scale) =>
+    StyleSheet.create({
+      gifImage: {
+        width: "100%",
+        height: "100%",
+        resizeMode: "contain",
+      },
+    }).gifImage,
+  // For consistency, we reuse validRump check function
+};
 
-function isValidRumpUsingComputedGroups(hand: any[]) {
+function isValidRumpUsingComputedGroups(hand) {
   if (hand.length !== 10) return false;
   for (let i = 0; i < hand.length; i++) {
     const candidateHand = hand.filter((_, idx) => idx !== i);
