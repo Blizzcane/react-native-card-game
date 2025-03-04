@@ -2,6 +2,16 @@ module.exports = function (api) {
   api.cache(true);
   return {
     presets: ["babel-preset-expo"],
-    plugins: ["react-native-reanimated/plugin"], // Add this line
+    plugins: [
+      [
+        "module-resolver",
+        {
+          alias: {
+            "@": "./", // adjust this path if needed, e.g., "./src" if your files are under a src folder
+          },
+        },
+      ],
+      "react-native-reanimated/plugin",
+    ],
   };
 };

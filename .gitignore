@@ -38,5 +38,4 @@ yarn-error.*
 app-example
 node_modules/
 web-build/
-.expo/
-firebaseConfig.js
+.expo/ 

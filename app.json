@@ -5,15 +5,16 @@
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp", 
+    "scheme": "myapp",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png", 
-      }
+        "foregroundImage": "./assets/images/adaptive-icon.png"
+      },
+      "package": "com.blizzcane.rump"
     },
     "web": {
       "bundler": "metro",
@@ -42,10 +43,32 @@
           "imageWidth": 200,
           "resizeMode": "contain"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.7.20",
+            "gradleProperties": {
+              "kotlin.jvm.target": "17",
+              "org.jetbrains.kotlin.kotlin_version": "1.7.20",
+              "suppressKotlinVersionCompatibilityCheck": "true"
+            }
+          }
+        }
       ]
+      
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "4d2188ed-e85a-48e8-97c7-d760ae049cda"
+      }
     }
   }
 }
