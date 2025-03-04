@@ -9,16 +9,19 @@ import {
   Image,
   useWindowDimensions,
   Animated,
+  ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
+import { Asset } from "expo-asset";
 import { db } from "@/firebaseConfig";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import avatars from "@/utils/avatarLoader";
 import MusicPlayer from "../components/MusicPlayer";
 import ZZ2 from "../assets/images/ZZ2.gif";
 
+// Prevent the splash screen from auto-hiding until assets are ready
 SplashScreen.preventAutoHideAsync();
 
 // Constants for card/suit values and deck generation
@@ -294,7 +297,6 @@ function validRumpAvailable(hand) {
 }
 
 // --- RoundOverOverlay Component ---
-// This component fades in a message, holds it, and then fades out.
 function RoundOverOverlay({ message, onAnimationEnd, scale }) {
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -328,14 +330,33 @@ export default function GameScreen() {
   const { roomId, playerId } = useLocalSearchParams();
   const { width, height } = useWindowDimensions();
 
-  // Define base dimensions (for 720p: 1280x720) and compute a scaling factor
+  // State to track asset loading
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
+
+  // Preload images (cards and GIF) before rendering the screen
+  useEffect(() => {
+    async function loadAssets() {
+      const images = [
+        ...Object.values(diamondImages),
+        ...Object.values(clubImages),
+        ...Object.values(heartImages),
+        ...Object.values(spadeImages),
+        ZZ2,
+      ];
+      await Asset.loadAsync(images);
+      setAssetsLoaded(true);
+      await SplashScreen.hideAsync();
+    }
+    loadAssets();
+  }, []);
+
+  // Always declare hooks, even if assets are not loaded yet.
   const baseWidth = 1280;
   const baseHeight = 720;
   const scaleW = width / baseWidth;
   const scaleH = height / baseHeight;
   const scale = Math.min(scaleW, scaleH);
 
-  // Dynamically scaled sizes for cards
   const cardWidth = 120 * scale;
   const cardHeight = 165 * scale;
 
@@ -358,7 +379,6 @@ export default function GameScreen() {
   const [showGif, setShowGif] = useState(false);
   const [dealerIndex, setDealerIndex] = useState(0);
   const [startingPlayerIndex, setStartingPlayerIndex] = useState(0);
-  // New state for the round over overlay message
   const [roundOverMessage, setRoundOverMessage] = useState("");
 
   const isRoundActive = roundStatus === "started";
@@ -399,7 +419,6 @@ export default function GameScreen() {
         if (typeof data.showGif === "boolean") {
           setShowGif(data.showGif);
         }
-        // Update the round over message if roundStatus is waiting and a message exists
         if (data.roundStatus === "waiting" && data.roundOverMessage) {
           setRoundOverMessage(data.roundOverMessage);
         }
@@ -467,7 +486,7 @@ export default function GameScreen() {
       startingPlayerIndex: newStartingIndex,
       currentTurn: players[newStartingIndex]?.id,
       showGif: true,
-      roundOverMessage: "", // reset any previous message
+      roundOverMessage: "",
     });
     const myHand = hands[playerId] || [];
     setPlayerHand(myHand);
@@ -547,7 +566,6 @@ export default function GameScreen() {
       discardPile: [...discardPile, discardedCard],
       currentTurn: nextPlayerId,
     });
-    // If deck is empty, update with a round over message.
     if (deck.length === 0) {
       Alert.alert("Deck is empty. Ending round.");
       await updateDoc(doc(db, "games", roomId), {
@@ -635,170 +653,172 @@ export default function GameScreen() {
 
   return (
     <SafeAreaView style={[styles.container(scale), { backgroundColor: colors.background }]}>
-      {/* Render MusicPlayer. Its absolute positioning ensures it won't interfere with the UI */}
-      <MusicPlayer hideButton={showGif} />
-      <View style={styles.content(scale)}>
-        {isHost && roundStatus === "waiting" && (
-          <TouchableOpacity style={styles.startRoundButton(scale)} onPress={initializeRound}>
-            <Text style={styles.startRoundText(scale)}>Start Round</Text>
-          </TouchableOpacity>
-        )}
-        <Text style={[styles.header(scale), { color: colors.text }]}>
-          {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
-        </Text>
-        {roundStatus === "gameOver" && winner && (
-          <Text style={[styles.winnerText(scale), { color: colors.text }]}>
-            Winner: {winner.name} with {String(winner.score || 0).padStart(3, "0")}
-          </Text>
-        )}
-        <View style={[styles.infoArea(scale), { flexDirection: isLandscape ? "row" : "column" }]}>
-          <View style={styles.avatarSection(scale)}>
-            {players.map((player) => {
-              const isCurrent = player.id === currentTurn;
-              const shouldGlow = isCurrent && (player.id === playerId ? !hasDrawnCard : false);
-              const avatarContent = (
-                <View
-                  key={player.id}
-                  style={[
-                    styles.avatarContainer(scale),
-                    isCurrent && styles.currentTurnHighlight(scale),
-                  ]}
-                >
-                  <Text
+      { !assetsLoaded ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color="#000" />
+          <Text>Loading assets...</Text>
+        </View>
+      ) : (
+        <>
+          <MusicPlayer hideButton={showGif} />
+          <View style={styles.content(scale)}>
+            {isHost && roundStatus === "waiting" && (
+              <TouchableOpacity style={styles.startRoundButton(scale)} onPress={initializeRound}>
+                <Text style={styles.startRoundText(scale)}>Start Round</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={[styles.header(scale), { color: colors.text }]}>
+              {roundStatus === "gameOver" ? "Game Over" : `Round ${currentRound}`}
+            </Text>
+            {roundStatus === "gameOver" && winner && (
+              <Text style={[styles.winnerText(scale), { color: colors.text }]}>
+                Winner: {winner.name} with {String(winner.score || 0).padStart(3, "0")}
+              </Text>
+            )}
+            <View style={[styles.infoArea(scale), { flexDirection: isLandscape ? "row" : "column" }]}>
+              <View style={styles.avatarSection(scale)}>
+                {players.map((player) => {
+                  const isCurrent = player.id === currentTurn;
+                  const shouldGlow = isCurrent && (player.id === playerId ? !hasDrawnCard : false);
+                  const avatarContent = (
+                    <View
+                      key={player.id}
+                      style={[
+                        styles.avatarContainer(scale),
+                        isCurrent && styles.currentTurnHighlight(scale),
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.avatarName(scale),
+                          isCurrent && styles.currentTurnAvatarName(scale),
+                        ]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {player.name}
+                      </Text>
+                      <Image source={avatars[player.avatar]} style={styles.avatarImage(scale)} />
+                      <View style={styles.scoreBorder(scale)}>
+                        <Text style={styles.scoreText(scale)} numberOfLines={1} adjustsFontSizeToFit>
+                          {String(player.score || 0).padStart(3, "0")}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                  return shouldGlow ? (
+                    <GlowingBorder key={player.id} active={shouldGlow}>
+                      {avatarContent}
+                    </GlowingBorder>
+                  ) : (
+                    avatarContent
+                  );
+                })}
+              </View>
+              <View style={styles.deckDiscardContainer(scale)}>
+                <View style={styles.deckColumn(scale)}>
+                  <TouchableOpacity
+                    onPress={drawFromDeck}
                     style={[
-                      styles.avatarName(scale),
-                      isCurrent && styles.currentTurnAvatarName(scale),
+                      styles.deckCard(scale),
+                      (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck(scale),
                     ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
+                    disabled={!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS}
                   >
-                    {player.name}
-                  </Text>
-                  <Image source={avatars[player.avatar]} style={styles.avatarImage(scale)} />
-                  {/* Scoreboard styles applied here */}
-                  <View style={styles.scoreBorder(scale)}>
-                    <Text style={styles.scoreText(scale)} numberOfLines={1} adjustsFontSizeToFit>
-                      {String(player.score || 0).padStart(3, "0")}
+                    <Text style={styles.cardText(scale)}>Deck ({deck.length})</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.rumpButton(scale), !canToggleRump && styles.disabledButton(scale), rumpButtonStyle]}
+                    onPress={() => {
+                      if (!canToggleRump) {
+                        Alert.alert("You cannot toggle Rump mode right now!");
+                        return;
+                      }
+                      setRumpMode(!rumpMode);
+                      if (rumpMode === true) setDiscardMode(false);
+                    }}
+                    disabled={!canToggleRump}
+                  >
+                    <Text style={[styles.rumpButtonText(scale), !canToggleRump && styles.disabledButton(scale), rumpMode ? { color: "#fff" } : { color: "#000" }]}>
+                      Rump
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
-              );
-              return shouldGlow ? (
-                <GlowingBorder key={player.id} active={shouldGlow}>
-                  {avatarContent}
-                </GlowingBorder>
-              ) : (
-                avatarContent
-              );
-            })}
-          </View>
-          <View style={styles.deckDiscardContainer(scale)}>
-            <View style={styles.deckColumn(scale)}>
-              <TouchableOpacity
-                onPress={drawFromDeck}
-                style={[
-                  styles.deckCard(scale),
-                  (!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS) && styles.disabledDeck(scale),
-                ]}
-                disabled={!isRoundActive || hasDrawnCard || playerHand.length >= MAX_CARDS}
-              >
-                <Text style={styles.cardText(scale)}>Deck ({deck.length})</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.rumpButton(scale), !canToggleRump && styles.disabledButton(scale), rumpButtonStyle]}
-                onPress={() => {
-                  if (!canToggleRump) {
-                    Alert.alert("You cannot toggle Rump mode right now!");
-                    return;
-                  }
-                  setRumpMode(!rumpMode);
-                  if (rumpMode === true) setDiscardMode(false);
-                }}
-                disabled={!canToggleRump}
-              >
-                <Text style={[styles.rumpButtonText(scale), !canToggleRump && styles.disabledButton(scale), rumpMode ? { color: "#fff" } : { color: "#000" }]}>
-                  Rump
-                </Text>
-              </TouchableOpacity>
+                <View style={styles.discardColumn(scale)}>
+                  <TouchableOpacity
+                    onPress={drawFromDiscard}
+                    style={[
+                      styles.deckCard(scale),
+                      (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck(scale),
+                    ]}
+                    disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
+                  >
+                    {discardPile.length > 0 ? (
+                      <Image source={getCardImage(discardPile[discardPile.length - 1])} style={styles.cardImage} />
+                    ) : (
+                      <Text style={styles.cardText(scale)}>Empty Discard</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.discardButton(scale),
+                      !canToggleDiscard && styles.disabledButton(scale),
+                      discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
+                    ]}
+                    onPress={() => {
+                      if (!canToggleDiscard) {
+                        Alert.alert("You cannot toggle Discard mode right now!");
+                        return;
+                      }
+                      setDiscardMode(!discardMode);
+                      if (!discardMode) setRumpMode(false);
+                    }}
+                    disabled={!canToggleDiscard}
+                  >
+                    <Text style={[styles.discardButtonText(scale), !canToggleDiscard && styles.disabledButton(scale), discardMode ? { color: "#fff" } : { color: "#000" }]}>
+                      Discard
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
-            <View style={styles.discardColumn(scale)}>
-              <TouchableOpacity
-                onPress={drawFromDiscard}
-                style={[
-                  styles.deckCard(scale),
-                  (!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS) && styles.disabledDeck(scale),
-                ]}
-                disabled={!isRoundActive || hasDrawnCard || discardPile.length === 0 || playerHand.length >= MAX_CARDS}
-              >
-                {discardPile.length > 0 ? (
-                  <Image source={getCardImage(discardPile[discardPile.length - 1])} style={styles.cardImage} />
-                ) : (
-                  <Text style={styles.cardText(scale)}>Empty Discard</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.discardButton(scale),
-                  !canToggleDiscard && styles.disabledButton(scale),
-                  discardMode ? { backgroundColor: "#a00" } : { backgroundColor: "#ccc" },
-                ]}
-                onPress={() => {
-                  if (!canToggleDiscard) {
-                    Alert.alert("You cannot toggle Discard mode right now!");
-                    return;
-                  }
-                  setDiscardMode(!discardMode);
-                  if (!discardMode) setRumpMode(false);
-                }}
-                disabled={!canToggleDiscard}
-              >
-                <Text style={[styles.discardButtonText(scale), !canToggleDiscard && styles.disabledButton(scale), discardMode ? { color: "#fff" } : { color: "#000" }]}>
-                  Discard
-                </Text>
-              </TouchableOpacity>
+            {displayHand.length > 0 && (
+              <View style={styles.handContainer(scale)}>
+                {displayHand.map((card, index) => {
+                  const comboStyle = highlightMapping[index]
+                    ? { borderColor: highlightMapping[index], borderWidth: 3 * scale }
+                    : null;
+                  return (
+                    <TouchableOpacity
+                      key={`${card.rank}-${card.suit}-${index}`}
+                      style={[
+                        styles.card(scale),
+                        { width: cardWidth, height: cardHeight },
+                        selectedCardIndex === index && styles.selectedCard(scale),
+                        comboStyle,
+                      ]}
+                      onPress={() => handleCardPress(index)}
+                    >
+                      <Image source={getCardImage(card)} style={styles.cardImage} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+          {showGif && (
+            <View style={styles.gifOverlay(scale)}>
+              <Image source={ZZ2} style={styles.gifImage(scale)} />
             </View>
-          </View>
-        </View>
-        {/* Only render the hand container if there are cards in displayHand */}
-        {displayHand.length > 0 && (
-          <View style={styles.handContainer(scale)}>
-            {displayHand.map((card, index) => {
-              const comboStyle = highlightMapping[index]
-                ? { borderColor: highlightMapping[index], borderWidth: 3 * scale }
-                : null;
-              return (
-                <TouchableOpacity
-                  key={`${card.rank}-${card.suit}-${index}`}
-                  style={[
-                    styles.card(scale),
-                    { width: cardWidth, height: cardHeight },
-                    selectedCardIndex === index && styles.selectedCard(scale),
-                    comboStyle,
-                  ]}
-                  onPress={() => handleCardPress(index)}
-                >
-                  <Image source={getCardImage(card)} style={styles.cardImage} />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </View>
-      {showGif && (
-        <View style={styles.gifOverlay(scale)}>
-          <Image 
-            source={ZZ2}
-            style={styles.gifImage(scale)}
-          />
-        </View>
-      )}
-      {/* Render the round over overlay if there is a message */}
-      {roundOverMessage !== "" && (
-        <RoundOverOverlay
-          message={roundOverMessage}
-          scale={scale}
-          onAnimationEnd={() => setRoundOverMessage("")}
-        />
+          )}
+          {roundOverMessage !== "" && (
+            <RoundOverOverlay
+              message={roundOverMessage}
+              scale={scale}
+              onAnimationEnd={() => setRoundOverMessage("")}
+            />
+          )}
+        </>
       )}
     </SafeAreaView>
   );
