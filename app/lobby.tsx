@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   SafeAreaView,
   View,
@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  StyleSheet
+  StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -31,10 +32,17 @@ export default function LobbyScreen() {
   const [hostId, setHostId] = useState("");
   const [playerId, setPlayerId] = useState("");
 
-  // Load Font
+  // Load custom font
   const [fontsLoaded] = useFonts({
     "PressStart2P": require("../assets/fonts/PressStart2P-Regular.ttf"),
   });
+
+  const { width, height } = useWindowDimensions();
+  // Set your base design dimensions (e.g., iPhone 8 dimensions)
+  const BASE_WIDTH = 375;
+  const BASE_HEIGHT = 667;
+  // Use the minimum scaling factor for a uniform scale
+  const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
 
   useEffect(() => {
     if (fontsLoaded) {
@@ -48,109 +56,113 @@ export default function LobbyScreen() {
 
   // Generate Unique Player ID
   useEffect(() => {
-    if (!playerId) {
+    if (!playerId && playerName) {
       setPlayerId(`${playerName}_${Math.random().toString(36).substr(2, 5)}`);
     }
-  }, [playerName]);
+  }, [playerName, playerId]);
 
-  // Fetch available game rooms (with status "waiting")
+  // Listen to available game rooms (only "waiting" status)
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "games"), (snapshot) => {
       const activeGames = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
         .filter(game => game.status === "waiting");
       setAvailableRooms(activeGames);
+    }, error => {
+      console.error("Error fetching available games: ", error);
     });
-
     return () => unsubscribe();
   }, []);
 
   // Host a new game
-  const hostGame = async () => {
-    if (!playerName) return alert("Enter a name first!");
-
-    // Create game with the host as first player
-    const newGameRef = await addDoc(collection(db, "games"), {
-      players: [{ id: playerId, name: playerName, avatar: selectedAvatar }],
-      status: "waiting",
-      hostId: playerId,
-    });
-
-    setGameId(newGameRef.id);
-    setHostId(playerId);
-    setIsHost(true);
-    joinGame(newGameRef.id);
-  };
-
-  // Join an existing game, but enforce max 4 players
-  const joinGame = async (id) => {
-    if (!playerName) return alert("Enter a name first!");
-
-    const gameRef = doc(db, "games", id);
-    const gameSnap = await getDoc(gameRef);
-
-    if (!gameSnap.exists()) {
-      alert("Game not found!");
-      return;
+  const hostGame = useCallback(async () => {
+    if (!playerName) {
+      return Alert.alert("Error", "Enter a name first!");
     }
-
-    const gameData = gameSnap.data();
-
-    // Enforce max 4 players on the frontend
-    if (gameData.players && gameData.players.length >= 4) {
-      alert("Game is full (maximum 4 players allowed).");
-      return;
+    try {
+      const newGameRef = await addDoc(collection(db, "games"), {
+        players: [{ id: playerId, name: playerName, avatar: selectedAvatar }],
+        status: "waiting",
+        hostId: playerId,
+      });
+      setGameId(newGameRef.id);
+      setHostId(playerId);
+      setIsHost(true);
+      // Automatically join the game after hosting
+      joinGame(newGameRef.id);
+    } catch (error) {
+      console.error("Error hosting game:", error);
     }
+  }, [playerName, playerId, selectedAvatar]);
 
-    setGameId(id);
-    const newPlayer = { id: playerId, name: playerName, avatar: selectedAvatar };
-
-    // Prevent duplicate players
-    if (!gameData.players.find(p => p.id === newPlayer.id)) {
-      const updatedPlayers = [...gameData.players, newPlayer];
-      await updateDoc(gameRef, { players: updatedPlayers });
-      setPlayers(updatedPlayers);
+  // Join an existing game (max 4 players enforced)
+  const joinGame = useCallback(async (id) => {
+    if (!playerName) {
+      return Alert.alert("Error", "Enter a name first!");
     }
+    try {
+      const gameRef = doc(db, "games", id);
+      const gameSnap = await getDoc(gameRef);
+      if (!gameSnap.exists()) {
+        return Alert.alert("Error", "Game not found!");
+      }
+      const gameData = gameSnap.data();
+      if (gameData.players && gameData.players.length >= 4) {
+        return Alert.alert("Info", "Game is full (maximum 4 players allowed).");
+      }
+      setGameId(id);
+      const newPlayer = { id: playerId, name: playerName, avatar: selectedAvatar };
+      // Prevent duplicate players
+      if (!gameData.players.find(p => p.id === newPlayer.id)) {
+        const updatedPlayers = [...gameData.players, newPlayer];
+        await updateDoc(gameRef, { players: updatedPlayers });
+        setPlayers(updatedPlayers);
+      }
+      setHostId(gameData.hostId);
+    } catch (error) {
+      console.error("Error joining game:", error);
+    }
+  }, [playerName, playerId, selectedAvatar]);
 
-    setHostId(gameData.hostId);
-  };
-
-  // Listen for real-time updates (player list, game start, host leaving)
+  // Listen for real-time game updates
   useEffect(() => {
     if (!gameId) return;
-    const unsubscribe = onSnapshot(doc(db, "games", gameId), async (snapshot) => {
+    const gameRef = doc(db, "games", gameId);
+    const unsubscribe = onSnapshot(gameRef, async (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setPlayers(data.players || []);
-
-        // If the host leaves, delete the game and kick everyone out
+        // If host leaves, delete the game and notify players
         if (!data.players.find(p => p.id === data.hostId)) {
-          await deleteDoc(doc(db, "games", gameId));
-          alert(t("game_closed"));
-          router.replace("/");
+          try {
+            await deleteDoc(gameRef);
+            Alert.alert(t("game_closed"));
+            router.replace("/");
+          } catch (error) {
+            console.error("Error deleting game after host left:", error);
+          }
         }
-
-        // Redirect to game screen when host starts
+        // Redirect to game screen when game starts
         if (data.status === "started") {
           router.push(`/game?roomId=${gameId}&playerId=${playerId}`);
         }
       }
+    }, error => {
+      console.error("Error listening to game updates:", error);
     });
-
     return () => unsubscribe();
-  }, [gameId]);
+  }, [gameId, playerId, router, t]);
 
-  // Leave Game
-  const leaveGame = async () => {
+  // Leave game function with confirmation
+  const leaveGame = useCallback(async () => {
     let confirmed = false;
-
     if (Platform.OS === "web") {
-      confirmed = window.confirm(t("confirm_leave"));
+      confirmed = window.confirm(t("Confirm"));
     } else {
       confirmed = await new Promise((resolve) => {
         Alert.alert(
-          t("leave_game"),
-          t("confirm_leave"),
+          t("Leave Lobby"),
+          t("Confirm"),
           [
             { text: t("cancel"), onPress: () => resolve(false), style: "cancel" },
             { text: t("leave"), onPress: () => resolve(true), style: "destructive" },
@@ -159,94 +171,92 @@ export default function LobbyScreen() {
         );
       });
     }
-
-    if (!confirmed) return;
-
-    if (!gameId) return;
-    const gameRef = doc(db, "games", gameId);
-    const gameSnap = await getDoc(gameRef);
-
-    if (!gameSnap.exists()) return;
-
-    const updatedPlayers = gameSnap.data().players.filter(p => p.id !== playerId);
-    await updateDoc(gameRef, { players: updatedPlayers });
-
-    // If the host leaves, delete the game and redirect
-    if (playerId === hostId) {
-      await deleteDoc(gameRef);
-      if (Platform.OS !== "web") {
-        Alert.alert(t("game_closed"));
+    if (!confirmed || !gameId) return;
+    try {
+      const gameRef = doc(db, "games", gameId);
+      const gameSnap = await getDoc(gameRef);
+      if (!gameSnap.exists()) return;
+      const updatedPlayers = gameSnap.data().players.filter(p => p.id !== playerId);
+      await updateDoc(gameRef, { players: updatedPlayers });
+      // If host leaves, delete game and redirect
+      if (playerId === hostId) {
+        await deleteDoc(gameRef);
+        if (Platform.OS !== "web") {
+          Alert.alert(t("game_closed"));
+        }
+        router.replace("/");
+        return;
       }
       router.replace("/");
-      return;
+    } catch (error) {
+      console.error("Error leaving game:", error);
     }
-
-    router.replace("/");
-  };
+  }, [gameId, playerId, hostId, router, t]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>{t("multiplayer_lobby")}</Text>
-
+    <SafeAreaView style={styles.container(scale)}>
+      <Text style={styles.header(scale)}>{t("Multiplayer Lobby")}</Text>
       {gameId ? (
         <>
-          <Text>{t("game_id")}: {gameId}</Text>
-          <Text>{t("host")}: {hostId}</Text>
-
-          {/* Show Player List with Avatars */}
+          <Text style={styles.infoText(scale)}>{t("Game ID")}: {gameId}</Text>
+          {/* Player List */}
           <FlatList
             data={players}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={styles.playerRow}>
-                <Image source={avatars[item.avatar]} style={styles.playerAvatar} /> 
-                <Text style={styles.playerText}>
+              <View style={styles.playerRow(scale)}>
+                <Image source={avatars[item.avatar]} style={styles.playerAvatar(scale)} />
+                <Text style={styles.playerText(scale)}>
                   {item.name} {item.id === hostId ? "(Host)" : ""}
                 </Text>
               </View>
             )}
           />
-
-          {/* Host can start game if there are at least 2 players */}
+          {/* Host controls */}
           {isHost && players.length >= 2 ? (
             <TouchableOpacity
-              style={styles.button}
-              onPress={() => updateDoc(doc(db, "games", gameId), { status: "started" })}
+              style={styles.button(scale)}
+              onPress={async () => {
+                try {
+                  await updateDoc(doc(db, "games", gameId), { status: "started" });
+                } catch (error) {
+                  console.error("Error starting game:", error);
+                }
+              }}
             >
-              <Text style={styles.buttonText}>{t("start_game")}</Text>
+              <Text style={styles.buttonText(scale)}>{t("Start Game")}</Text>
             </TouchableOpacity>
           ) : (
-            <Text>
-              {isHost ? t("waiting_for_players") : t("waiting_for_host")}
+            <Text style={styles.infoText(scale)}>
+              {isHost ? t("waiting for players") : t("waiting for host to start game")}
             </Text>
           )}
-
           {/* Leave Game Button */}
-          <TouchableOpacity style={styles.leaveButton} onPress={leaveGame}>
-            <Text style={styles.buttonText}>{t("leave_game")}</Text>
+          <TouchableOpacity style={styles.leaveButton(scale)} onPress={leaveGame}>
+            <Text style={styles.buttonText(scale)}>{t("Leave Lobby")}</Text>
           </TouchableOpacity>
         </>
       ) : (
         <>
-          <TouchableOpacity style={styles.button} onPress={hostGame}>
-            <Text style={styles.buttonText}>{t("Host Game")}</Text>
+          <TouchableOpacity style={styles.button(scale)} onPress={hostGame}>
+            <Text style={styles.buttonText(scale)}>{t("Host Game")}</Text>
           </TouchableOpacity>
-          <Text style={styles.subHeader}>{t("Available Games")}</Text>
+          <Text style={styles.subHeader(scale)}>{t("Available Games")}</Text>
           {availableRooms.length > 0 ? (
             <FlatList
               data={availableRooms}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.roomItem}
+                  style={styles.roomItem(scale)}
                   onPress={() => joinGame(item.id)}
                 >
-                  <View style={styles.lobbyAvatarGrid}>
+                  <View style={styles.lobbyAvatarGrid(scale)}>
                     {item.players.map((player, index) => (
                       <Image
                         key={index}
                         source={avatars[player.avatar]}
-                        style={styles.lobbyAvatar}
+                        style={styles.lobbyAvatar(scale)}
                       />
                     ))}
                   </View>
@@ -254,7 +264,7 @@ export default function LobbyScreen() {
               )}
             />
           ) : (
-            <Text style={styles.noRooms}>{t("no_games_available")}</Text>
+            <Text style={styles.noRooms(scale)}>{t("No Games Available")}</Text>
           )}
         </>
       )}
@@ -263,49 +273,109 @@ export default function LobbyScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  header: { fontSize: 24, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 20 },
-  playerRow: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
-  playerAvatar: { width: 50, height: 50, marginRight: 10 },
-  lobbyAvatarGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginVertical: 5 },
-  lobbyAvatar: {
-    width: 100,
-    height: 100,
-    marginHorizontal: 5,
-    borderWidth: 4,
+  container: (scale) => ({
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20 * scale,
+  }),
+  header: (scale) => ({
+    fontSize: 24 * scale,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    marginVertical: 20 * scale,
+    color: "#000",
+  }),
+  infoText: (scale) => ({
+    fontSize: 16 * scale,
+    fontFamily: "PressStart2P",
+    marginVertical: 10 * scale,
+    color: "#fff",
+  }),
+  playerRow: (scale) => ({
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 5 * scale,
+  }),
+  playerAvatar: (scale) => ({
+    width: 50 * scale,
+    height: 50 * scale,
+    marginRight: 10 * scale,
+  }),
+  playerText: (scale) => ({
+    fontFamily: "PressStart2P",
+    fontSize: 12 * scale,
+    color: "#000",
+  }),
+  button: (scale) => ({
+    backgroundColor: "#c3c3c3",
+    padding: 10 * scale,
+    marginVertical: 10 * scale,
+    borderRadius: 3 * scale,
+    borderWidth: 4 * scale,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  }),
+  buttonText: (scale) => ({
+    color: "#fff",
+    fontFamily: "PressStart2P",
+    fontSize: 14 * scale,
+  }),
+  leaveButton: (scale) => ({
+    backgroundColor: "red",
+    padding: 8 * scale,          // reduced padding
+    marginVertical: 8 * scale,    // reduced margin
+    borderRadius: 3 * scale,      // same border radius to keep the shape
+    borderWidth: 3 * scale,       // reduced border width
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  }),
+  
+
+  subHeader: (scale) => ({
+    fontSize: 16 * scale,
+    fontFamily: "PressStart2P",
+    textAlign: "center",
+    marginVertical: 10 * scale,
+    color: "#000",
+  }),
+  roomItem: (scale) => ({
+    flexDirection: "row",
+    flexWrap: "wrap",
+    backgroundColor: "#c3c3c3",
+    padding: 10 * scale,
+    borderRadius: 3 * scale,
+    marginVertical: 5 * scale,
+    borderWidth: 4 * scale,
+    borderLeftColor: "#fff",
+    borderTopColor: "#fff",
+    borderRightColor: "#404040",
+    borderBottomColor: "#404040",
+  }),
+  noRooms: (scale) => ({
+    fontFamily: "PressStart2P",
+    fontSize: 14 * scale,
+    color: "#c3c3c3",
+    textAlign: "center",
+  }),
+  lobbyAvatarGrid: (scale) => ({
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    marginVertical: 5 * scale,
+  }),
+  lobbyAvatar: (scale) => ({
+    width: 100 * scale,
+    height: 100 * scale,
+    marginHorizontal: 5 * scale,
+    borderWidth: 4 * scale,
     borderTopColor: "#404040",
     borderLeftColor: "#404040",
     borderBottomColor: "#fff",
     borderRightColor: "#fff",
-  },
-  playerText: { fontFamily: "PressStart2P", fontSize: 12 },
-  button: {
-    backgroundColor: "#c3c3c3",
-    padding: 10,
-    marginVertical: 10,
-    borderRadius: 3,
-    borderWidth: 4,
-    borderLeftColor: "#fff",
-    borderTopColor: "#fff",
-    borderRightColor: "#404040",
-    borderBottomColor: "#404040",
-  },
-  buttonText: { color: "#fff", fontFamily: "PressStart2P" },
-  leaveButton: { backgroundColor: "red", padding: 10, marginVertical: 10, borderRadius: 5 },
-  subHeader: { fontSize: 16, fontFamily: "PressStart2P", textAlign: "center", marginVertical: 10 },
-  roomItem: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    backgroundColor: "#c3c3c3",
-    padding: 10,
-    borderRadius: 3,
-    marginVertical: 5,
-    borderWidth: 4,
-    borderLeftColor: "#fff",
-    borderTopColor: "#fff",
-    borderRightColor: "#404040",
-    borderBottomColor: "#404040",
-  },
-  roomText: { color: "#fff", fontFamily: "PressStart2P" },
-  noRooms: { fontFamily: "PressStart2P", fontSize: 14, color: "#000" },
+  }),
 });
