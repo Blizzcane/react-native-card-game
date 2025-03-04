@@ -296,7 +296,7 @@ export default function GameScreen() {
   const scaleH = height / baseHeight;
   const scale = Math.min(scaleW, scaleH);
 
-  // Dynamically scaled sizes for cards (you can adjust these for larger cards)
+  // Dynamically scaled sizes for cards
   const cardWidth = 120 * scale;
   const cardHeight = 165 * scale;
 
@@ -704,27 +704,30 @@ export default function GameScreen() {
             </View>
           </View>
         </View>
-        <View style={styles.handContainer(scale)}>
-          {displayHand.map((card, index) => {
-            const comboStyle = highlightMapping[index]
-              ? { borderColor: highlightMapping[index], borderWidth: 3 * scale }
-              : null;
-            return (
-              <TouchableOpacity
-                key={`${card.rank}-${card.suit}-${index}`}
-                style={[
-                  styles.card(scale),
-                  { width: cardWidth, height: cardHeight },
-                  selectedCardIndex === index && styles.selectedCard(scale),
-                  comboStyle,
-                ]}
-                onPress={() => handleCardPress(index)}
-              >
-                <Image source={getCardImage(card)} style={styles.cardImage} />
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {/* Only render the hand container if there are cards in displayHand */}
+        {displayHand.length > 0 && (
+          <View style={styles.handContainer(scale)}>
+            {displayHand.map((card, index) => {
+              const comboStyle = highlightMapping[index]
+                ? { borderColor: highlightMapping[index], borderWidth: 3 * scale }
+                : null;
+              return (
+                <TouchableOpacity
+                  key={`${card.rank}-${card.suit}-${index}`}
+                  style={[
+                    styles.card(scale),
+                    { width: cardWidth, height: cardHeight },
+                    selectedCardIndex === index && styles.selectedCard(scale),
+                    comboStyle,
+                  ]}
+                  onPress={() => handleCardPress(index)}
+                >
+                  <Image source={getCardImage(card)} style={styles.cardImage} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </View>
       {showGif && (
         <View style={styles.gifOverlay(scale)}>
