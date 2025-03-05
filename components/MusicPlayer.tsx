@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   TouchableOpacity,
@@ -169,7 +169,6 @@ function shuffleArray(array) {
 }
 
 export default function MusicPlayer({ hideButton = false }) {
-  // Compute scale based on current window dimensions relative to a base size.
   const { width, height } = useWindowDimensions();
   const baseWidth = 1280;
   const baseHeight = 720;
@@ -180,30 +179,65 @@ export default function MusicPlayer({ hideButton = false }) {
   const [isPlaying, setIsPlaying] = useState(true);
   const soundRef = useRef(null);
 
-  // Set audio mode once on component mount
+  // Set audio mode on component mount
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
-    });
+    async function setAudioMode() {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
+        });
+      } catch (error) {
+        console.error("Error setting audio mode:", error);
+      }
+    }
+    setAudioMode();
   }, []);
 
+  // Shuffle playlist on mount
   useEffect(() => {
     setShuffledPlaylist(shuffleArray(playlist));
   }, []);
 
+  // Memoized handler for playing the next track
+  const handleNext = useCallback(() => {
+    setCurrentIndex((prevIndex) => (prevIndex + 1) % shuffledPlaylist.length);
+  }, [shuffledPlaylist]);
+
+  // Memoized handler for playing the previous track
+  const handlePrevious = useCallback(() => {
+    setCurrentIndex((prevIndex) =>
+      (prevIndex - 1 + shuffledPlaylist.length) % shuffledPlaylist.length
+    );
+  }, [shuffledPlaylist]);
+
+  // Load current track with cancellation handling
   useEffect(() => {
-    async function loadTrack(index) {
+    if (shuffledPlaylist.length === 0) return;
+    let isCancelled = false;
+
+    async function loadCurrentTrack() {
+      // Unload previous sound if exists
       if (soundRef.current) {
-        await soundRef.current.unloadAsync();
+        try {
+          await soundRef.current.unloadAsync();
+        } catch (error) {
+          console.error("Error unloading sound:", error);
+        }
         soundRef.current = null;
       }
+
       try {
         const { sound } = await Audio.Sound.createAsync(
-          shuffledPlaylist[index].source,
+          shuffledPlaylist[currentIndex].source,
           { shouldPlay: true, isLooping: false }
         );
+        if (isCancelled) {
+          // If cancelled before setting sound, unload it immediately.
+          await sound.unloadAsync();
+          return;
+        }
         soundRef.current = sound;
         setIsPlaying(true);
         sound.setOnPlaybackStatusUpdate((status) => {
@@ -215,36 +249,31 @@ export default function MusicPlayer({ hideButton = false }) {
         console.error("Error loading track:", error);
       }
     }
-    if (shuffledPlaylist.length > 0) {
-      loadTrack(currentIndex);
-    }
+
+    loadCurrentTrack();
+
     return () => {
+      isCancelled = true;
       if (soundRef.current) {
         soundRef.current.unloadAsync();
       }
     };
-  }, [shuffledPlaylist, currentIndex]);
+  }, [shuffledPlaylist, currentIndex, handleNext]);
 
   const togglePlayPause = async () => {
     if (soundRef.current) {
-      if (isPlaying) {
-        await soundRef.current.pauseAsync();
-        setIsPlaying(false);
-      } else {
-        await soundRef.current.playAsync();
-        setIsPlaying(true);
+      try {
+        if (isPlaying) {
+          await soundRef.current.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          await soundRef.current.playAsync();
+          setIsPlaying(true);
+        }
+      } catch (error) {
+        console.error("Error toggling playback:", error);
       }
     }
-  };
-
-  const handleNext = () => {
-    setCurrentIndex((prevIndex) => (prevIndex + 1) % shuffledPlaylist.length);
-  };
-
-  const handlePrevious = () => {
-    setCurrentIndex((prevIndex) =>
-      (prevIndex - 1 + shuffledPlaylist.length) % shuffledPlaylist.length
-    );
   };
 
   const currentSongTitle =
@@ -258,7 +287,7 @@ export default function MusicPlayer({ hideButton = false }) {
             <View style={styles.innerContainer(scale)}>
               <TextTicker
                 style={styles.marqueeText(scale)}
-                duration={15000} // Smooth scrolling duration
+                duration={15000}
                 loop
                 bounce={false}
                 repeatSpacer={50}
