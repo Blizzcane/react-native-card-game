@@ -40,3 +40,6 @@ node_modules/
 web-build/
 .expo/
 firebaseConfig.js
+
+# Local Netlify folder
+.netlify
